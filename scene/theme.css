@@ -1,0 +1,38 @@
+/* 網站/scene/theme.css — 配色、字型與 3D 疊加層（美術維護）；面板沿用這裡的 CSS 變數 */
+/* 版面：全螢幕 3D 群島為底，左上標題列、右上時段切換，點島後由下方（手機）或右側（桌機）滑出資訊面板 */
+:root{
+  --paper:#fff8ec;        /* 面板底色：暖白 */
+  --ink:#3b2a1a;          /* 主要文字：深焙咖啡 */
+  --ink-soft:#7a6450;     /* 次要文字 */
+  --sun:#f2a516;          /* 主色：正午陽光金 */
+  --ember:#d9682b;        /* 輔色：夕陽橙 */
+  --line:#ead9bf;         /* 分隔線 */
+  --chip:#fbe7c2;
+  --glass:rgba(255,248,236,.86);
+  --font-display:"Huninn","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --font-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#2a1f17;--ink:#f6e8d4;--ink-soft:#c4ab8e;--sun:#f5b53a;--ember:#ef8a50;--line:#4a3826;--chip:#463220;--glass:rgba(42,31,23,.86);color-scheme:dark}}
+:root[data-theme="dark"]{--paper:#2a1f17;--ink:#f6e8d4;--ink-soft:#c4ab8e;--sun:#f5b53a;--ember:#ef8a50;--line:#4a3826;--chip:#463220;--glass:rgba(42,31,23,.86);color-scheme:dark}
+
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-body);overflow:hidden}
+#sky{position:fixed;inset:0;transition:background 1.2s ease}
+#stage{position:fixed;inset:0;touch-action:none}
+#stage canvas{display:block}
+
+.labels{position:fixed;inset:0;pointer-events:none;z-index:3}
+.tag{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:auto;cursor:pointer;
+  font:400 .9rem var(--font-display);letter-spacing:.04em;color:#3b2a1a;background:#fff8ec;border-radius:999px;padding:5px 12px;
+  box-shadow:0 3px 0 rgba(120,70,20,.25);border:0;z-index:1}
+/* 公告島標籤永遠疊在最上層，手機上不會被其他島的標籤蓋住 */
+.tag.main{background:var(--sun);font-size:1.02rem;padding:6px 15px;z-index:3}
+.tag.far{background:rgba(255,248,236,.78);color:#6b5440;font-size:.74rem;padding:3px 9px;box-shadow:none;pointer-events:none;z-index:0}
+.tag.road{background:#3a3936;color:#f3eee6;font:500 .7rem var(--font-body);padding:2px 8px;box-shadow:none;pointer-events:none;border-radius:4px;z-index:0}
+.tag.compass{background:#3b2a1a;color:#fff3dc;font-size:.74rem;padding:3px 9px;box-shadow:none;pointer-events:none;z-index:0}
+.tag small{font:500 .68rem var(--font-body);color:#9a6a2c;margin-left:5px}
+
+.hint{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);z-index:4;
+  background:var(--glass);backdrop-filter:blur(8px);border-radius:999px;padding:8px 16px;font-size:.85rem;color:var(--ink-soft);text-align:center;width:max-content;max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion:reduce){#sky{transition:none}}

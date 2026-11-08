@@ -7,7 +7,7 @@
    ========================================================= */
 window.CONFIG = {
   MOCK: false,
-  API_URL: 'https://script.google.com/macros/s/AKfycbytQtbQpV4dxihcs8aW2zy9u0u8Y8f8TFeAdgavi8cpEk-pY7bpsuftZaIeupsscspz/exec',   // 測試後端（環境=測試）
+  API_URL: 'https://script.google.com/macros/s/AKfycbzopIAaA2kzarFWMq7t--LnLANigZ8U_x413XLETzKbr0TdoRj8aXN3Skim7G7f385H/exec',   // 測試後端（環境=測試，管委會帳號部署）
   FRONT_URL: 'https://jttaiwan.github.io/heliocentrism-islands/',
   API_MAJOR: 2,            // 後端主版號；不符時提示重新整理
   STATS_CACHE_MS: 5 * 60 * 1000

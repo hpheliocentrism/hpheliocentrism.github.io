@@ -40,7 +40,7 @@ camera.position.set(26, 30, 38).multiplyScalar(narrow ? 1.25 : 1);
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 1.5, 0);
 controls.enableDamping = true; controls.enablePan = false;
-controls.minDistance = 18; controls.maxDistance = 95;
+controls.minDistance = 8; controls.maxDistance = 95;
 controls.maxPolarAngle = Math.PI * 0.42;
 controls.autoRotate = !reduced; controls.autoRotateSpeed = 0.35;
 
@@ -413,13 +413,36 @@ const bmat = {
   gymGlass:M(0xbcd3d9,{roughness:.2, transparent:true, opacity:.55, emissive:0xffe2a0, emissiveIntensity:0})
 };
 
+/* 輪胎＋五爆輪框（輪軸沿 x）。side：1＝左側（+x）、-1＝右側 */
+const rimMat = M(0xb9bcc0,{metalness:.55, roughness:.35}), hubMat = M(0x55585d,{metalness:.4, roughness:.5});
+function wheelHD(r, side){
+  const w = cyl(r,r,.06,14,bmat.black); w.rotation.z = Math.PI/2;
+  const o = -side*.031;                                              // 輪框朝外那一面
+  w.add(cyl(r*.68,r*.68,.004,14,hubMat,0,o,0));                      // 輪框內凹深色底
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(r*.66,.006,4,16), rimMat); ring.rotation.x = Math.PI/2; ring.position.y = o*1.02; w.add(ring);
+  for(let k=0;k<5;k++){ const sp = box(.016,.006,r*1.25,rimMat,0,o*1.03,0,false); sp.rotation.y = k*Math.PI*2/5; w.add(sp); }
+  w.add(cyl(r*.18,r*.18,.008,6,rimMat,0,o*1.06,0));
+  return w;
+}
+/* 一般轎車（車頭朝 -z）：側面輪廓擠出、玻璃、輪拱、後照鏡、空白車牌（不寫號碼）、燈組 */
 function sedan(s = bmat.silver){
   const g = new THREE.Group();
-  g.add(box(.44,.15,1.0,s,0,.14,0));
-  g.add(box(.4,.13,.52,mat.glass,0,.28,.02));
-  g.add(box(.38,.03,.4,s,0,.355,.02));
-  [[.21,.32],[-.21,.32],[.21,-.32],[-.21,-.32]].forEach(([x,z]) => g.add(cyl(.075,.075,.06,10,bmat.black,x,.075,z).rotateZ(Math.PI/2)));
-  [.13,-.13].forEach(x => g.add(box(.08,.04,.02,mat.lamp,x,.17,-.5,false)));
+  const ext = (pts, w, m) => { const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([z,y]) => new THREE.Vector2(z,y))), {depth:w, bevelEnabled:false});
+    geo.rotateY(-Math.PI/2); geo.translate(w/2,0,0); const o = new THREE.Mesh(geo, m); o.castShadow = true; o.receiveShadow = true; return o; };
+  // 外型座標：z 為車身前後（車頭在 -z），y 為高度
+  g.add(ext([[-.5,.07],[.5,.07],[.515,.15],[.5,.215],[.36,.235],[.22,.245],[.12,.355],[-.1,.365],[-.2,.345],[-.31,.25],[-.48,.225],[-.515,.15]], .44, s));
+  g.add(ext([[.205,.249],[.115,.36],[-.1,.37],[-.195,.35],[-.3,.254],[.2,.244]], .448, mat.glass));
+  g.add(ext([[.02,.25],[.02,.355],[-.005,.355],[-.005,.25]], .452, s));               // B 柱
+  g.add(box(.446,.035,1.0,M(0x2a2a2c),0,.088,0,false));                              // 下緣飾條
+  [[.32,1],[-.32,1]].forEach(([z]) => [1,-1].forEach(side => {
+    const arch = new THREE.Mesh(new THREE.CylinderGeometry(.1,.1,.01,10,1,false,0,Math.PI), M(0x2a2a2c)); arch.rotation.z = Math.PI/2; arch.rotation.y = 0;
+    arch.position.set(side*.221,.085,z); arch.rotation.x = Math.PI; g.add(arch);
+    const w = wheelHD(.08, side); w.position.set(side*.205,.08,z); g.add(w);
+  }));
+  [1,-1].forEach(side => g.add(box(.05,.03,.035,s,side*.245,.265,-.26,false)));       // 後照鏡
+  [.14,-.14].forEach(x => { g.add(box(.09,.035,.015,mat.lamp,x,.18,-.512,false)); g.add(box(.1,.03,.015,M(0xb3121a,{emissive:0xff2a2a, emissiveIntensity:.35}),x,.2,.512,false)); });
+  g.add(box(.2,.035,.012,M(0x2a2a2c),0,.13,-.516,false));                             // 水箱護罩
+  g.add(box(.13,.045,.01,mat.white,0,.13,.517,false));                  // 空白車牌
   return g;
 }
 function scooter(c){
@@ -929,37 +952,205 @@ const inBld = (x,z) => x > BLD.x1 && x < BLD.x2 && z > BLD.z1 && z < BLD.z2;
 const walkable = (x,z) => insideHex(x,z,.35) && !inBld(x,z);
 const groundY = (x,z) => (x > -2.66 && x < 3.65 && z > -3.16 && z < 3.56) ? .066 : (x >= 3.65 ? 0 : .023);
 
+/* 柴犬（2026-11-08 美術：細一級＋關節骨架）
+   近看用精細版（頭型、眉毛、雙色耳、捲尾、裏白、前後腳各兩節關節），遠看自動換回簡單版。
+   動作：站立（呼吸、轉頭、搖尾）、走、跑、坐下。以公尺建模後縮放。 */
 const shiba = (() => {
-  const g = new THREE.Group();
-  const fur = M(0xd98a43), cream = M(0xf6ead6), dark = M(0x2a211c);
-  g.add(box(.12,.1,.24,fur,0,.15,0));
-  g.add(box(.1,.03,.2,cream,0,.1,0,false));
-  g.add(box(.1,.07,.04,cream,0,.16,.115,false));                    // 胸前白毛
-  const head = new THREE.Group(); head.position.set(0,.23,.14); g.add(head);
-  head.add(box(.11,.1,.1,fur,0,0,0));
-  head.add(box(.065,.045,.06,cream,0,-.025,.07));
-  head.add(box(.022,.02,.02,dark,0,-.005,.1,false));
-  [-.03,.03].forEach(x => head.add(box(.016,.016,.01,dark,x,.02,.052,false)));
-  [-.035,.035].forEach(x => { const e = new THREE.Mesh(new THREE.ConeGeometry(.026,.055,4), fur); e.position.set(x,.075,-.01); e.castShadow = true; head.add(e); });
-  const tail = new THREE.Mesh(new THREE.TorusGeometry(.035,.017,5,8), fur);
-  tail.position.set(0,.23,-.125); tail.rotation.y = Math.PI/2; tail.castShadow = true; g.add(tail);
-  const legs = [];
-  [[-.04,.08],[.04,.08],[-.04,-.08],[.04,-.08]].forEach(([x,z]) => {
-    const p = new THREE.Group(); p.position.set(x,.11,z);
-    p.add(box(.032,.1,.032,fur,0,-.05,0), box(.034,.02,.036,cream,0,-.095,.003,false));
-    g.add(p); legs.push(p);
+  const root = new THREE.Group();
+  const fur = M(0xd4813c), furD = M(0xb8692c), cream = M(0xf6ead6), dark = M(0x231b16), pink = M(0xc98a86);
+  const sh = (geo, m, x=0,y=0,z=0) => { const o = new THREE.Mesh(geo, m); o.position.set(x,y,z); o.castShadow = true; return o; };
+  const joint = (parent, x,y,z) => { const j = new THREE.Group(); j.position.set(x,y,z); parent.add(j); return j; };
+  /* ---- 精細版 ---- */
+  const hd = new THREE.Group(); root.add(hd);
+  const body = joint(hd, 0,.32,.13);                                   // 樞紐在肩膀（坐下時後半身下沉）
+  const torso = new THREE.CylinderGeometry(.1,.108,.38,8); torso.rotateX(Math.PI/2);
+  const t1 = sh(torso, fur, 0,.02,-.17); t1.scale.set(.9,1,1); body.add(t1);
+  const belly = new THREE.CylinderGeometry(.08,.09,.3,8); belly.rotateX(Math.PI/2);
+  const b1 = sh(belly, cream, 0,-.025,-.15); b1.scale.set(.8,.85,1); body.add(b1);
+  const chest = sh(new THREE.IcosahedronGeometry(.08,1), cream, 0,-.01,.02); chest.scale.set(.95,1.05,.55); body.add(chest);       // 胸前白毛
+  body.add(sh(new THREE.IcosahedronGeometry(.1,1), fur, 0,.025,-.32));           // 臀部
+  // 脖子與頭
+  const neck = joint(body, 0,.06,.04); neck.rotation.x = .55;
+  const nk = new THREE.CylinderGeometry(.06,.075,.11,7); nk.translate(0,.055,0); neck.add(sh(nk, fur));
+  const head = joint(neck, 0,.11,.0); head.rotation.x = -.55;
+  const skull = sh(new THREE.IcosahedronGeometry(.085,1), fur, 0,.03,0); skull.scale.set(1.05,.9,1); head.add(skull);
+  const mz = new THREE.CylinderGeometry(.026,.04,.075,7); mz.rotateX(Math.PI/2);
+  head.add(sh(mz, cream, 0,-.012,.075));
+  head.add(sh(new THREE.BoxGeometry(.03,.022,.02), dark, 0,.0,.114));           // 鼻頭
+  head.add(sh(new THREE.BoxGeometry(.03,.006,.03), dark, 0,-.033,.09));         // 嘴線
+  [-1,1].forEach(s => {
+    head.add(sh(new THREE.BoxGeometry(.016,.018,.01), dark, s*.032,.03,.06));     // 眼睛
+    head.add(sh(new THREE.BoxGeometry(.016,.008,.01), cream, s*.03,.05,.058));    // 麻呂眉
+    const ck = sh(new THREE.IcosahedronGeometry(.032,0), cream, s*.045,-.022,.035); ck.scale.set(.8,.8,1); head.add(ck); // 臉頰白毛
+    const ear = joint(head, s*.038,.07,-.015); ear.rotation.set(-.2,0,-s*.18);
+    const eg = new THREE.ConeGeometry(.036,.085,3); eg.rotateY(Math.PI/6); eg.translate(0,.035,0);
+    const eo = sh(eg, fur); eo.scale.set(1,1,.5); ear.add(eo);
+    const ei = new THREE.ConeGeometry(.02,.05,3); ei.rotateY(Math.PI/6); ei.translate(0,.028,.008);
+    const en = sh(ei, pink); en.scale.set(1,1,.4); ear.add(en);
   });
-  g.scale.setScalar(1.35);
-  g.traverse(o => { if(o.isMesh) o.userData.island = 'notice'; });
-  return {g, head, tail, legs};
+  // 捲尾：捲在背上，尾巴內側白色
+  const tail = joint(body, 0,.07,-.38);
+  const tg = new THREE.TorusGeometry(.052,.024,6,10,Math.PI*1.6); tg.rotateY(Math.PI/2);
+  const tw = sh(tg, fur, 0,.05,.0); tw.rotation.x = -.6; tail.add(tw);
+  tail.add(sh(new THREE.IcosahedronGeometry(.025,0), cream, 0,.075,.04));
+  // 四肢：前腳（肩→肘）、後腳（髖→跗關節）
+  const legs = [];
+  const mkLeg = (x, z, hind) => {
+    const up = joint(body, x, -.03, z);
+    const ug = new THREE.BoxGeometry(hind ? .06 : .052, hind ? .14 : .13, hind ? .08 : .058); ug.translate(0,hind ? -.07 : -.065,0);
+    up.add(sh(ug, fur));
+    const lo = joint(up, 0, hind ? -.14 : -.13, hind ? -.01 : 0);
+    const lg = new THREE.BoxGeometry(.044,.12,.046); lg.translate(0,-.06,0);
+    lo.add(sh(lg, fur), sh(new THREE.IcosahedronGeometry(hind ? .034 : .03,0), fur));   // 關節處補一塊，彎曲時不露縫
+    const paw = sh(new THREE.BoxGeometry(.052,.026,.064), cream, 0,-.122,.014); lo.add(paw);
+    const L = {up, lo, hind, base: hind ? [-.3,.5] : [0,0]};
+    up.rotation.x = L.base[0]; lo.rotation.x = L.base[1];
+    legs.push(L); return L;
+  };
+  // 順序：左前、右前、左後、右後
+  mkLeg(.058,.0,false); mkLeg(-.058,.0,false); mkLeg(.06,-.31,true); mkLeg(-.06,-.31,true);
+  hd.scale.setScalar(.8);
+  /* ---- 簡單版（遠看）---- */
+  const lo = new THREE.Group(); root.add(lo);
+  lo.add(box(.12,.1,.24,fur,0,.15,0), box(.1,.03,.2,cream,0,.1,0,false));
+  lo.add(box(.11,.1,.1,fur,0,.23,.14), box(.065,.045,.06,cream,0,.205,.21));
+  [-.035,.035].forEach(x => { const e = new THREE.Mesh(new THREE.ConeGeometry(.026,.055,4), fur); e.position.set(x,.305,.13); lo.add(e); });
+  const loLegs = [];
+  [[-.04,.08],[.04,.08],[-.04,-.08],[.04,-.08]].forEach(([x,z]) => { const p = new THREE.Group(); p.position.set(x,.11,z); p.add(box(.032,.1,.032,fur,0,-.05,0)); lo.add(p); loLegs.push(p); });
+  lo.scale.setScalar(1.35); lo.visible = false;
+  root.traverse(o => { if(o.isMesh) o.userData.island = 'notice'; });
+  return {g:root, hd, lo, loLegs, body, neck, head, tail, legs, sit:0};
 })();
 mainIsland.add(shiba.g);
+/* 柴犬骨架模型（精細版，2026-11-08 美術）：模型來源 CGTrader「Doggo」，依住戶提供的照片調整比例與毛色；讀 window.SHIBA_MODEL，建立 SkinnedMesh，並以程式驅動骨頭做動作。
+   姿勢：stand（站）、walk（走）、run（跑）、sit（坐）、side（側躺睡）、belly（翻肚）。
+   每幀呼叫 rig.update(dt, t, pose, gait 相位)，骨頭角度會平滑過渡到目標姿勢。 */
+function makeShibaRig(D, M, height){
+  const COL = [0xb5642b, 0x9a5224, 0xefdfc8, 0x1e1a19, 0xdcae9c];   // 毛色、背部深色、裏白、黑、耳內
+  const mats = COL.map(c => M(c, {roughness:.95, skinning:true}));   // r128：骨架動畫的材質要開 skinning
+  const raw = D.bones.map(b => b.xyz.map(v => v/10));
+  // 原模型朝 +x、y 向上 → 場景朝 +z：X = -z、Z = x - 中心
+  const hip = raw[D.bones.findIndex(b => b.n === 'spine004')], sho = raw[D.bones.findIndex(b => b.n === 'spine008')];
+  const xc = (hip[0] + sho[0]) / 2;
+  const top = Math.max(...raw.map(p => p[1]));
+  const S = height / top;
+  const T = (x,y,z) => [-z*S, y*S, (x - xc)*S];
+  const W = raw.map(p => T(...p));
+  // 骨頭（靜止姿勢無旋轉，所以 rotation.x 就是前後擺、rotation.z 是左右）
+  const bones = D.bones.map(b => { const o = new THREE.Bone(); o.name = b.n; return o; });
+  const roots = [];
+  D.bones.forEach((b,i) => {
+    const p = W[i], q = b.p >= 0 ? W[b.p] : [0,0,0];
+    bones[i].position.set(p[0]-q[0], p[1]-q[1], p[2]-q[2]);
+    if(b.p >= 0) bones[b.p].add(bones[i]); else roots.push(bones[i]);
+  });
+  const n = D.pos.length/3, pos = new Float32Array(n*3);
+  for(let i=0;i<n;i++){ const v = T(D.pos[i*3]/10, D.pos[i*3+1]/10, D.pos[i*3+2]/10); pos[i*3]=v[0]; pos[i*3+1]=v[1]; pos[i*3+2]=v[2]; }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(D.si,4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(D.sw.map(w => w/100),4));
+  D.groups.forEach(([s,c,m]) => geo.addGroup(s,c,m));
+  geo.computeVertexNormals();
+  const mesh = new THREE.SkinnedMesh(geo, mats);
+  roots.forEach(r => mesh.add(r));
+  mesh.bind(new THREE.Skeleton(bones));
+  mesh.castShadow = true; mesh.frustumCulled = false;
+  // 眼睛：兩個小方塊掛在頭骨上（一般網格不能用 skinning 材質）
+  const eyeM = M(0x1e1a19);
+  const B = {}; bones.forEach(b => B[b.name] = b);
+  const head = B.spine011, hw = new THREE.Vector3(); mesh.updateMatrixWorld(true); head.getWorldPosition(hw);
+  const ev = []; for(let i=0;i<D.eyes.length/3;i++) ev.push(T(D.eyes[i*3]/10, D.eyes[i*3+1]/10, D.eyes[i*3+2]/10));
+  [1,-1].forEach(sg => {
+    const pts = ev.filter(p => p[0]*sg > 0); if(!pts.length) return;
+    const c = [0,1,2].map(k => pts.reduce((a,p) => a+p[k], 0)/pts.length);
+    const e = new THREE.Mesh(new THREE.BoxGeometry(S*1.6, S*.9, S*1.4), eyeM);
+    e.position.set(c[0]-hw.x, c[1]-hw.y, c[2]-hw.z); head.add(e);
+  });
+  // 舌頭（跑完、玩耍時吐舌）
+  const tongue = new THREE.Mesh(new THREE.BoxGeometry(S*2.2, S*.5, S*3), M(0xe0717a));
+  let snw = new THREE.Vector3(0,0,-1e9); for(let i=0;i<n;i++) if(pos[i*3+2] > snw.z) snw.set(pos[i*3], pos[i*3+1], pos[i*3+2]);   // 鼻尖＝最前端的點
+  tongue.position.set(0, (snw.y-hw.y) - S*3.5, (snw.z-hw.z) - S*2.5); tongue.rotation.x = .5; tongue.visible = false; head.add(tongue);
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body); body.add(mesh);
+  // 翻身時以軀幹中心為軸
+  const torsoY = W[D.bones.findIndex(b => b.n === 'spine006')][1] - 3*S, thighY = W[D.bones.findIndex(b => b.n === 'thighL')][1];
+  mesh.position.y = -torsoY;
+  // 目前角度與目標角度
+  const cur = new Map(), tgt = new Map();
+  bones.forEach(b => { cur.set(b, new THREE.Vector3()); tgt.set(b, new THREE.Vector3()); });
+  const R = {roll:0, lift:0, drop:0}, Rt = {roll:0, lift:0, drop:0};
+  const set = (name, x=0, y=0, z=0) => { const b = B[name]; if(b) tgt.get(b).set(x,y,z); };
+  const LR = (f) => { f('L', 1); f('R', -1); };
+  function pose(kind, ph, t){
+    tgt.forEach(v => v.set(0,0,0)); Rt.roll = 0; Rt.lift = 0; Rt.drop = 0;
+    const s = Math.sin(ph), c = Math.cos(ph);
+    if(kind === 'walk' || kind === 'run'){
+      const run = kind === 'run', A = run ? .75 : .45;
+      LR((sd, sg) => {
+        // 走：對角線同步；跑：前後各一組（奔跑）
+        const off = run ? (sd === 'L' ? .35 : 0) : (sd === 'L' ? Math.PI : 0);
+        const offH = run ? Math.PI*.85 + (sd === 'L' ? .35 : 0) : (sd === 'L' ? 0 : Math.PI);
+        const fs = Math.sin(ph+off), fc = Math.cos(ph+off), hs = Math.sin(ph+offH), hc = Math.cos(ph+offH);
+        set('front_thigh'+sd, -A*fs);  set('front_foot'+sd, Math.max(0,-fc)*1.1*(run?1.2:1));
+        set('thigh'+sd, -A*hs);        set('shin'+sd, Math.max(0,hc)*.5);   set('foot'+sd, -Math.max(0,hc)*.7);
+      });
+      set('spine006', run ? s*.12 : 0); set('spine009', run ? -c*.12 : 0);
+      set('spine003', 0, 0, Math.sin(t*(run?9:7))*(run?.12:.25));
+      Rt.lift = run ? Math.abs(c)*.02 : Math.abs(c)*.008;
+    } else if(kind === 'sit'){
+      set('spine004', -.65); set('spine006', -.15);             // 前身抬起（以臀部為軸）、背部微彎
+      LR(sd => { set('front_thigh'+sd, .8); set('front_foot'+sd, -.05); set('thigh'+sd, -.82); set('shin'+sd, 3.0); set('foot'+sd, -1.3); });
+      set('spine009', .45); set('spine011', Math.sin(t*.8)*.08, Math.sin(t*.6)*.35);
+      set('spine003', 0, 0, Math.sin(t*10)*.25);
+      Rt.drop = 1;
+    } else if(kind === 'side'){                                // 側躺睡覺
+      Rt.roll = Math.PI/2;
+      LR((sd, sg) => { set('front_thigh'+sd, -.5 + sg*.08); set('front_foot'+sd, .15); set('thigh'+sd, -.35 + sg*.08); set('shin'+sd, .25); });
+      set('spine009', -.15); set('spine011', .25 + Math.sin(t*1.2)*.02);
+      set('spine003', -.4); set('spine006', Math.sin(t*1.2)*.03);   // 呼吸
+    } else if(kind === 'belly'){                               // 翻肚
+      Rt.roll = Math.PI;
+      LR((sd, sg) => { set('front_thigh'+sd, -1.2 + Math.sin(t*1.5 + sg)*.08); set('front_foot'+sd, 1.6); set('thigh'+sd, -.9 + Math.sin(t*1.3 - sg)*.1); set('shin'+sd, .9); set('foot'+sd, -.6); set('spine'+'009', 0); });
+      set('spine011', 0, .4); set('spine003', .3, 0, Math.sin(t*3)*.3);
+    } else {                                                  // 站著：呼吸、張望、搖尾
+      set('spine011', Math.sin(t*.7)*.06, Math.sin(t*.9)*.45, Math.sin(t*1.3)*.08);
+      set('spine003', 0, 0, Math.sin(t*12)*.3);
+      set('spine006', Math.sin(t*2.2)*.015);
+    }
+  }
+  function update(dt, t, kind, ph, pant){
+    pose(kind, ph, t);
+    const k = Math.min(1, dt * (kind === 'walk' || kind === 'run' ? 18 : 5));
+    bones.forEach(b => { const c = cur.get(b); c.lerp(tgt.get(b), k); b.rotation.set(c.x, c.y, c.z); });
+    const kr = Math.min(1, dt*3);
+    R.roll += (Rt.roll - R.roll)*kr; R.lift += (Rt.lift - R.lift)*k; R.drop += (Rt.drop - R.drop)*kr;
+    body.rotation.z = R.roll;
+    // 側躺、翻肚時把身體放到地面；坐下時臀部降到地面
+    const lay = Math.abs(Math.sin(R.roll));
+    const half = .055 + .03*Math.max(0, -Math.cos(R.roll));            // 側躺貼地約半個身寬，翻肚約半個身高
+    body.position.y = torsoY + R.lift - R.drop*thighY*.95 - (1 - Math.cos(R.roll*0) )*0 - Math.min(1, lay + Math.max(0,-Math.cos(R.roll)))*(torsoY - half);
+    tongue.visible = kind === 'run' || kind === 'belly' || !!pant;
+  }
+  return {g, mesh, B, update, S};
+}
+
+// 骨架模型資料在 scene/models/shiba.js；載入後換掉程式拼成的精細版（載入失敗就沿用程式版）
+function attachShibaRig(){
+  if(shiba.rig || !window.SHIBA_MODEL) return;
+  try {
+    const rig = makeShibaRig(window.SHIBA_MODEL, M, .42);
+    rig.g.traverse(o => { if(o.isMesh) o.userData.island = 'notice'; });
+    shiba.g.add(rig.g); shiba.rig = rig; shiba.hd.visible = false;
+  } catch(e){ console.warn('柴犬模型載入失敗，改用簡易版', e); }
+}
+if(window.SHIBA_MODEL) attachShibaRig();
+else { const sc = document.createElement('script'); sc.src = 'scene/models/shiba.js'; sc.onload = attachShibaRig; document.head.appendChild(sc); }
 
 // 點擊位置標記（淡出的圓圈）
 const pawRing = new THREE.Mesh(new THREE.RingGeometry(.12,.17,20), new THREE.MeshBasicMaterial({color:0xf2a516, transparent:true, opacity:0, depthWrite:false}));
 pawRing.rotation.x = -Math.PI/2; mainIsland.add(pawRing);
 
-const dog = {x:-2.3, z:-.8, target:null, wait:1.5, speed:.9, phase:0, heading:0};
+const dog = {x:-2.3, z:-.8, target:null, wait:1.5, speed:.9, phase:0, heading:0, rest:'stand', pant:0, getUp:0};
 function randomTarget(){
   for(let i=0;i<40;i++){
     const x = (Math.random()*2-1)*5, z = (Math.random()*2-1)*5.6;
@@ -973,24 +1164,66 @@ function sendDog(x,z){
     if(d==='x1') x = BLD.x1-.05; if(d==='x2') x = BLD.x2+.05; if(d==='z1') z = BLD.z1-.05; if(d==='z2') z = BLD.z2+.05;
   }
   if(!insideHex(x,z,.3)) return;
-  dog.target = {x,z}; dog.speed = 1.7;
+  if(dog.rest && dog.rest !== 'stand' && !dog.target) dog.getUp = dog.rest === 'sit' ? .25 : .6;
+  dog.rest = 'stand'; dog.target = {x,z}; dog.speed = 1.7;
   pawRing.position.set(x, groundY(x,z)+.01, z); pawRing.material.opacity = .9;
 }
 const angLerp = (a,b,k) => { let d = ((b-a+Math.PI) % (Math.PI*2) + Math.PI*2) % (Math.PI*2) - Math.PI; return a + d*k; };
+const _dogWorld = new THREE.Vector3();
+// 依步態設定關節角度。gait：0＝站立、1＝走、2＝跑；sit：0–1
+function poseDog(sh, t, gait, sit){
+  const ph = dog.phase, k = gait === 2 ? 1 : gait === 1 ? .6 : 0;
+  const sw = Math.sin(ph), cw = Math.cos(ph);
+  sh.legs.forEach((L,i) => {
+    // 走：對角線同步（左前＋右後）；跑：前腳一組、後腳一組（奔跑）
+    const off = gait === 2 ? (L.hind ? Math.PI*.9 : 0) + (i%2 ? .35 : 0) : ((i===0||i===3) ? 0 : Math.PI);
+    const s = Math.sin(ph + off), c = Math.cos(ph + off);
+    let up = L.base[0] + s*.5*k, lo = L.base[1];
+    if(L.hind) lo += -Math.max(0, c)*.5*k; else lo += Math.max(0, -c)*.9*k;
+    if(L.hind){ up = up*(1-sit) + (-.82)*sit; lo = lo*(1-sit) + 2.9*sit; }    // 坐：大腿平放往前、小腿往後收
+    else { up = up*(1-sit) + .75*sit; lo = lo*(1-sit); }                       // 前腳撐直（抵消身體後傾）
+    L.up.rotation.x = up; L.lo.rotation.x = lo;
+  });
+  sh.body.rotation.x = -.75*sit + (gait === 2 ? sw*.08 : 0);
+  sh.body.position.y = .32 - .035*sit + (gait ? Math.abs(cw)*.012*k : Math.sin(t*2.2)*.003);
+  sh.neck.rotation.x = .55 + .55*sit + (gait === 2 ? -cw*.08 : 0);
+  sh.tail.rotation.z = Math.sin(t*(gait ? 8 : 13))*(gait === 2 ? .15 : .35);
+  // 簡單版
+  const lsw = Math.sin(ph)*.7*k;
+  sh.loLegs[0].rotation.x = lsw; sh.loLegs[3].rotation.x = lsw; sh.loLegs[1].rotation.x = -lsw; sh.loLegs[2].rotation.x = -lsw;
+}
 function updateDog(dt, t){
-  const sh = shiba;
+  const sh = shiba, rig = sh.rig;
+  // 遠近切換：鏡頭距離柴犬 22 以內用精細版（骨架模型或程式版），較遠用簡單版
+  sh.g.getWorldPosition(_dogWorld);
+  const near = camera.position.distanceTo(_dogWorld) < 22;
+  if(rig){ rig.g.visible = near; sh.hd.visible = false; } else sh.hd.visible = near;
+  sh.lo.visible = !near;
   if(pawRing.material.opacity > 0) pawRing.material.opacity = Math.max(0, pawRing.material.opacity - dt*.5);
+  if(dog.pant > 0) dog.pant -= dt;
+  const pose = kind => { if(rig && near) rig.update(dt, t, kind, dog.phase, dog.pant > 0); };
   if(!dog.target){
     dog.wait -= dt;
-    sh.legs.forEach(l => l.rotation.x *= .8);
-    sh.tail.rotation.x = Math.sin(t*12)*.45;
-    sh.head.rotation.z = Math.sin(t*1.3)*.15;
+    // 停下時的姿勢：站、坐、側躺睡、翻肚（照住戶提供的照片）；要走之前先站起來
+    if(dog.wait <= 0 && dog.rest !== 'stand'){ dog.rest = 'stand'; dog.wait = .9; }
+    const wantSit = dog.rest === 'sit' ? 1 : 0;
+    sh.sit += (wantSit - sh.sit) * Math.min(1, dt*4);
+    sh.head.rotation.y = Math.sin(t*.9)*.45; sh.head.rotation.z = Math.sin(t*1.3)*.12;
+    poseDog(sh, t, 0, sh.sit); pose(dog.rest || 'stand');
     sh.g.position.set(dog.x, groundY(dog.x,dog.z), dog.z);
-    if(dog.wait <= 0){ dog.target = randomTarget(); dog.speed = .9; if(!dog.target) dog.wait = 1; }
+    if(dog.wait <= 0 && sh.sit < .05){ dog.target = randomTarget(); dog.speed = .9; if(!dog.target) dog.wait = 1; }
     return;
   }
+  if(dog.getUp > 0){ dog.getUp -= dt; sh.sit = Math.max(0, sh.sit - dt*4); poseDog(sh, t, 0, sh.sit); pose('stand'); return; }
+  if(sh.sit > .05){ sh.sit = Math.max(0, sh.sit - dt*4); poseDog(sh, t, 0, sh.sit); pose('stand'); return; }
   const dx = dog.target.x-dog.x, dz = dog.target.z-dog.z, d = Math.hypot(dx,dz);
-  if(d < .06){ dog.target = null; dog.wait = 1.5+Math.random()*3; return; }
+  if(d < .06){
+    if(dog.speed > 1.2) dog.pant = 4;                                     // 跑完吐舌頭
+    const r = Math.random();
+    dog.rest = r < .35 ? 'stand' : r < .7 ? 'sit' : r < .85 ? 'side' : 'belly';
+    dog.wait = dog.rest === 'side' || dog.rest === 'belly' ? 6 + Math.random()*5 : 2 + Math.random()*3;
+    dog.target = null; dog.sitter = dog.rest === 'sit'; return;
+  }
   const step = Math.min(d, dog.speed*dt);
   let vx = dx/d, vz = dz/d;
   if(inBld(dog.x+vx*step, dog.z+vz*step)){
@@ -1004,16 +1237,16 @@ function updateDog(dt, t){
     }
   }
   const nx = dog.x+vx*step, nz = dog.z+vz*step;
-  if(!insideHex(nx,nz,.3) || inBld(nx,nz)){ dog.target = null; dog.wait = .5; return; }
+  if(!insideHex(nx,nz,.3) || inBld(nx,nz)){ dog.target = null; dog.wait = .5; dog.rest = 'stand'; return; }
   dog.x = nx; dog.z = nz;
   dog.heading = angLerp(dog.heading, Math.atan2(vx,vz), Math.min(1, dt*10));
-  dog.phase += dt * (dog.speed > 1.2 ? 18 : 12);
-  const sw = Math.sin(dog.phase)*.7;
-  sh.legs[0].rotation.x = sw; sh.legs[3].rotation.x = sw; sh.legs[1].rotation.x = -sw; sh.legs[2].rotation.x = -sw;
-  sh.tail.rotation.x = Math.sin(dog.phase*.5)*.2;
-  sh.head.rotation.z *= .9;
+  const run = dog.speed > 1.2;
+  dog.phase += dt * (run ? 15 : 10);
+  sh.head.rotation.y *= .9; sh.head.rotation.z *= .9;
+  poseDog(sh, t, reduced ? 0 : run ? 2 : 1, 0);
+  pose(reduced ? 'stand' : run ? 'run' : 'walk');
   sh.g.rotation.y = dog.heading;
-  sh.g.position.set(dog.x, groundY(dog.x,dog.z) + (reduced ? 0 : Math.abs(Math.sin(dog.phase))*.025), dog.z);
+  sh.g.position.set(dog.x, groundY(dog.x,dog.z), dog.z);
 }
 
 

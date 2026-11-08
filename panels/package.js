@@ -48,9 +48,8 @@
           <div class="row"><b>${esc(p.cls)}</b><span class="tag-s ${STAGE_TONE(p.stage)}">${esc(p.stage)}</span></div>
           <div class="muted small">簽收 ${esc(p.time)}・已存放 ${p.days} 天${p.countdown > 0 ? `・距可處理 ${p.countdown} ${esc(p.cdUnit)}` : ''}${p.fee ? `・保管費 ${p.fee} 元` : ''}</div>
           ${p.note ? `<div class="small">${esc(p.note)}</div>` : ''}
-          ${night ? `<button class="btn small" data-collect="${esc(p.id)}">我已領取</button>` : ''}
         </li>`).join('')}</ul>` : `<p class="okbox">目前沒有待領包裹。</p>`) +
-      (packages.length && !night ? `<p class="muted small">白天請向管理員出示通知並簽收；18:00～06:00 可自助領取後按「我已領取」。</p>` : '');
+      (packages.length ? `<p class="muted small">06:00～18:00 請向管理員出示本頁面或戶號憑證領取；18:00～06:00 可自行取件，取件後請在管理室紙本登記本寫下戶號、件數、時間並簽名（管理員次日補記）。</p>` : '');
     el.querySelectorAll('[data-collect]').forEach(b => b.onclick = () => ui.confirmTwice(b, async () => {
       const r = await ui.run('pkg.collect', {id:b.dataset.collect}, {button:b});
       if(r.ok){ ui.toast('已記錄領取'); API.invalidateStats(); ui.pushStats(true); ui.refresh(); }

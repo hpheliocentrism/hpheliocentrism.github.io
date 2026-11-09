@@ -111,7 +111,8 @@
     const wrap = document.createElement('div');
     wrap.innerHTML = `
       <form class="form" novalidate>
-        <label>帳號<input name="account" autocomplete="username" required placeholder="Email、戶號（如 3B）或工作人員帳號"></label>
+        <label>帳號<input name="account" type="text" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required placeholder="收驗證信的 Email"></label>
+        <p class="muted small">屋主與家人請輸入收驗證信的 Email；管委會代建的長輩帳號輸入戶號（如 3B）；工作人員輸入工作帳號。</p>
         <label>密碼<input name="password" type="password" autocomplete="current-password" required></label>
         <p class="alert" hidden></p>
         <button class="btn primary block" type="submit">登入</button>
@@ -183,6 +184,7 @@
     pTitle.textContent = title;
     pBody.innerHTML = `<form class="form" novalidate>
         <dl class="spec"><dt>姓名</dt><dd>${esc(d.name)}</dd><dt>戶號</dt><dd>${esc(d.unit)}</dd></dl>
+        ${d.email ? `<label>登入帳號（以後登入請輸入這個 Email）<input name="username" type="email" autocomplete="username" value="${esc(d.email)}" readonly></label>` : ''}
         ${d.needConsent ? `<div class="consent" tabindex="0">${esc(d.consentText)}</div>
           <label class="check"><input type="checkbox" name="consent" value="1"> 我已閱讀並同意以上個資告知（${esc(d.consentVersion)}）</label>` : ''}
         ${d.needPhone ? `<label>電話<input name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="0912345678"></label>` : ''}

@@ -90,7 +90,16 @@
     const u = Auth.user(), el = $('#userbox');
     if(!u){ el.innerHTML = `<button class="btn small" id="btn-login">登入</button>`; $('#btn-login').onclick = () => showLogin(); }
     else {
-      el.innerHTML = `<span class="who">${esc(u.unit ? u.unit + '・' : '')}${esc(u.name)}<small>${esc(u.roleLabel || '')}</small></span><button class="btn small ghost" id="btn-logout">登出</button>`;
+      el.innerHTML = `<span class="who">${esc(u.unit ? u.unit + '・' : '')}${esc(u.name)}<small>${esc(u.roleLabel || '')}</small></span>`
+        + (u.role === 'owner' ? `<button class="btn small ghost" id="btn-family">家人帳號</button>` : '')
+        + `<button class="btn small ghost" id="btn-logout">登出</button>`;
+      const fb = $('#btn-family');
+      if(fb) fb.onclick = () => {
+        current = null;
+        openPanel('家人帳號管理', '屋主可邀請家人、租客建立帳號（每戶最多 6 個）');
+        pBody.innerHTML = '';
+        window.Panels.package.family(pBody, ui);
+      };
       $('#btn-logout').onclick = () => { Auth.logout(); ui.toast('已登出'); if(current) ui.refresh(); };
     }
   }

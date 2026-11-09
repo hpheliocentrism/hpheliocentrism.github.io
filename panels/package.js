@@ -57,7 +57,7 @@
     if(Auth.user().role === 'owner') familyBlock(el, ui);
   }
 
-  async function familyBlock(el, ui){
+  async function familyBlock(el, ui, opts = {}){
     const {esc} = ui;
     const sec = document.createElement('details'); sec.className = 'fold';
     sec.innerHTML = `<summary>家人帳號管理</summary><div class="fold-body"></div>`;
@@ -77,6 +77,7 @@
       };
     };
     sec.addEventListener('toggle', () => { if(sec.open) load(); });
+    if(opts.open) sec.open = true;
   }
 
   /* ---------- 管理員 ---------- */
@@ -189,5 +190,5 @@
   }
 
   window.Panels = window.Panels || {};
-  window.Panels.package = {render};
+  window.Panels.package = {render, family: (el, ui) => familyBlock(el, ui, {open:true})};
 })();

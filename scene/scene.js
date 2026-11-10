@@ -922,7 +922,35 @@ const PROPS = {
   office(g){
     g.add(box(2.6,1.4,2,mat.wall,0,.7,0), box(2.9,.15,2.3,mat.roof,0,1.48,0));
     g.add(box(.7,.9,.05,mat.door,0,.45,1.02), box(.6,.4,.05,mat.glass,-.85,.85,1.02), box(.6,.4,.05,mat.glass,.85,.85,1.02));
-    g.add(tree(2.8,2), tree(-3,1.6), tree(2.6,-3));
+    g.add(tree(3.6,1.0), tree(-3.6,1.0), tree(2.6,-3));
+    // 「財務」「公告」兩個入口標示（2026-11-09 美術）：只顯示名稱，不顯示金額、收支或公告內容。
+    // 點擊時 scene 會把 userData.adminTab（'fee'／'notice'）交給 onIslandClick 的第二個參數。
+    const signTex = (title, sub, bg, fg, icon) => {
+      const c = document.createElement('canvas'); c.width = 512; c.height = 320;
+      const x = c.getContext('2d'); x.fillStyle = bg; x.fillRect(0,0,512,320);
+      x.strokeStyle = fg; x.lineWidth = 8; x.strokeRect(14,14,484,292);
+      x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.font = '700 120px "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif'; x.fillText(title, 300, 150);
+      x.font = '500 34px "Noto Sans TC","PingFang TC",sans-serif'; x.fillText(sub, 256, 262);
+      icon(x); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t;
+    };
+    const entry = (tab, x, z, ry, tex, frameM) => {
+      const s = new THREE.Group(); s.position.set(x,0,z); s.rotation.y = ry;
+      s.add(box(.08,1.15,.08,mat.wood,-.62,.57,0), box(.08,1.15,.08,mat.wood,.62,.57,0));
+      s.add(box(1.42,.92,.08,frameM,0,1.12,0));
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(1.3,.81), new THREE.MeshBasicMaterial({map:tex}));
+      face.position.set(0,1.12,.045); s.add(face);
+      s.add(box(1.6,.08,.32,mat.roof,0,1.62,0));
+      s.userData.dynamic = true;                                    // 不合併，點擊時才找得到 adminTab
+      s.traverse(o => { o.userData.adminTab = tab; });
+      g.add(s); return s;
+    };
+    entry('fee', -1.75, 2.0, .35, signTex('財務', '本戶帳單・收支公布', '#2c4f7c', '#f6d38a', x => {
+      x.fillStyle = '#f6d38a'; x.beginPath(); x.arc(110,150,52,0,7); x.fill();
+      x.fillStyle = '#2c4f7c'; x.font = '900 64px sans-serif'; x.fillText('$', 110, 154); }), M(0x1f3a5e));
+    entry('notice', 1.75, 2.0, -.35, signTex('公告', '管委會正式事項', '#fff6e6', '#3b2a1a', x => {
+      x.fillStyle = '#d9542b'; x.fillRect(64,104,92,108); x.fillStyle = '#fffaf0'; x.fillRect(74,114,72,88);
+      x.fillStyle = '#c9b9a0'; for(let i=0;i<4;i++) x.fillRect(84,128+i*18,52,6); }), mat.trim);
   }
 };
 
@@ -936,7 +964,8 @@ ISLANDS.forEach((def, i) => {
   const {x,z} = hexToWorld(def.q, def.r);
   g.position.set(x, 0, z);
   const ext = (window.SceneProps || {})[def.id];
-  if(ext && ext.build){ ext.build(g); g.userData.ext = ext; }
+  // ext.withBuiltin：保留本檔內建造景，只在上面加東西（例如停車場島的倒數看板）
+  if(ext && ext.build){ if(ext.withBuiltin){ (PROPS[def.prop] || (()=>{}))(g); mergeStatic(g); } ext.build(g); g.userData.ext = ext; }
   else { (PROPS[def.prop] || (()=>{}))(g); mergeStatic(g); }
   g.userData = Object.assign(g.userData||{}, {def, phase:i*1.3});
   g.traverse(o => { if(o.isMesh) o.userData.island = def.id; });
@@ -1428,7 +1457,11 @@ renderer.domElement.addEventListener('pointerup', e => {
     while(o){ if(o === mainIsland.userData.building){ onBuilding = true; break; } o = o.parent; }
     if(hit.object.userData.island === 'notice' && !onBuilding){
       const p = mainIsland.worldToLocal(hit.point.clone()); sendDog(p.x, p.z);
-    } else if(hit.object.userData.island) clickCb(hit.object.userData.island);
+    } else if(hit.object.userData.island){
+      // 管委會島的「財務」「公告」標示：第二個參數帶 {adminTab}
+      const tab = hit.object.userData.adminTab;
+      if(tab) clickCb(hit.object.userData.island, {adminTab:tab}); else clickCb(hit.object.userData.island);
+    }
   }
   const hintEl = document.getElementById('hint'); if(hintEl) hintEl.hidden = true;
 });

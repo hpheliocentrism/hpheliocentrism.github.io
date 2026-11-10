@@ -2,7 +2,9 @@
    網站/panels/package.js — 包裹島面板（整合維護）
    第 1 層（公開）：只顯示 pkg.stats 的數量
    住戶（pkg:resident）：我的包裹、夜間自助領取；屋主另有家人帳號
-   管理員（pkg:sign）：今日待辦與公告、簽收、待領清單
+   管理員（pkg:sign）：今日待辦與公告、簽收、待領清單（含夜間紙本補記）
+   管委會（pkg:admin）：另有保管費月結
+   2.2.0：「我已領取」只在 pkg.mine 的 selfCollect 與 night 都是 true 時顯示
    規格：claude/community-core/API.md 第 4.5～4.8 節
    ========================================================= */
 (function(){
@@ -43,13 +45,17 @@
     const res = await ui.run('pkg.mine');
     if(!res.ok){ el.innerHTML = ''; return; }
     const {unit, packages, night} = res.data;
+    const self = !!res.data.selfCollect && !!night;     // 2.2.0：管委會開放夜間自助且現在是夜間，才顯示「我已領取」
     el.innerHTML = `<h3>${esc(unit)} 的待領包裹</h3>` + (packages.length ? `<ul class="list">${packages.map(p => `
         <li class="item">
           <div class="row"><b>${esc(p.cls)}</b><span class="tag-s ${STAGE_TONE(p.stage)}">${esc(p.stage)}</span></div>
           <div class="muted small">簽收 ${esc(p.time)}・已存放 ${p.days} 天${p.countdown > 0 ? `・距可處理 ${p.countdown} ${esc(p.cdUnit)}` : ''}${p.fee ? `・保管費 ${p.fee} 元` : ''}</div>
           ${p.note ? `<div class="small">${esc(p.note)}</div>` : ''}
+          ${self ? `<button class="btn small primary" data-collect="${esc(p.id)}">我已領取</button>` : ''}
         </li>`).join('')}</ul>` : `<p class="okbox">目前沒有待領包裹。</p>`) +
-      (packages.length ? `<p class="muted small">06:00～18:00 請向管理員出示本頁面或戶號憑證領取；18:00～06:00 可自行取件，取件後請在管理室紙本登記本寫下戶號、件數、時間並簽名（管理員次日補記）。</p>` : '');
+      (packages.length ? (self ? `<p class="muted small">夜間自助領取：拿到包裹後按「我已領取」。</p>`
+        : night ? `<p class="warnbox">夜間請至管理室自行取件，並在紙本登記本寫下戶號、件數、時間並簽名，管理員次日補記。</p>`
+        : `<p class="muted small">請向管理員出示本戶頁面並簽收。</p>`) : '');
     el.querySelectorAll('[data-collect]').forEach(b => b.onclick = () => ui.confirmTwice(b, async () => {
       const r = await ui.run('pkg.collect', {id:b.dataset.collect}, {button:b});
       if(r.ok){ ui.toast('已記錄領取'); API.invalidateStats(); ui.pushStats(true); ui.refresh(); }
@@ -85,11 +91,12 @@
     el.innerHTML = `<div class="tabs" role="tablist">
         <button role="tab" data-t="todo" aria-selected="true">今日待辦</button>
         <button role="tab" data-t="sign">簽收</button>
-        <button role="tab" data-t="list">待領清單</button></div><div id="pk-tab"></div>`;
+        <button role="tab" data-t="list">待領清單</button>
+        ${Auth.can('pkg:admin') ? `<button role="tab" data-t="fees">保管費月結</button>` : ''}</div><div id="pk-tab"></div>`;
     const tab = el.querySelector('#pk-tab');
     const show = t => {
       el.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.t === t));
-      ({todo:todoTab, sign:signTab, list:listTab})[t](tab, ui);
+      ({todo:todoTab, sign:signTab, list:listTab, fees:feesTab})[t](tab, ui);
     };
     el.querySelectorAll('[role=tab]').forEach(b => b.onclick = () => show(b.dataset.t));
     show('todo');
@@ -182,11 +189,50 @@
     el.innerHTML = `<p class="muted small">共 ${ps.length} 件待領</p><ul class="list">${ps.map(p => `
       <li class="item"><div class="row"><b>${esc(p.unit)}・${esc(p.cls)}</b><span class="tag-s ${STAGE_TONE(p.stage)}">${esc(p.stage)}</span></div>
         <div class="small muted">${esc(p.time)}・${p.days} 天${p.fee ? `・${p.fee} 元` : ''}${p.hasPhoto ? '・有照片' : ''}</div>
-        <button class="btn small" data-id="${esc(p.id)}">住戶當面領取</button></li>`).join('')}</ul>`;
+        <div class="btnrow"><button class="btn small" data-id="${esc(p.id)}">住戶當面領取</button>
+          <button class="btn small ghost" data-paper="${esc(p.id)}">夜間紙本補記</button></div>
+        <form class="form paper" data-for="${esc(p.id)}" hidden novalidate>
+          <label>登記本上的領取時間<input name="gotAt" type="datetime-local" required></label>
+          <p class="muted small">須晚於簽收時間、48 小時內；更早的請管委會補登。</p>
+          <p class="alert" hidden></p><button class="btn small primary">補記領取</button></form></li>`).join('')}</ul>`;
+    const done = msg => { ui.toast(msg); API.invalidateStats(); ui.pushStats(true); listTab(el, ui); };
     el.querySelectorAll('[data-id]').forEach(b => b.onclick = () => ui.confirmTwice(b, async () => {
       const res = await ui.run('pkg.collect', {id:b.dataset.id}, {button:b});
-      if(res.ok){ ui.toast('已標記領取'); API.invalidateStats(); ui.pushStats(true); listTab(el, ui); }
+      if(res.ok) done('已標記領取' + (res.data.fee ? `，保管費 ${res.data.fee} 元` : ''));
     }));
+    el.querySelectorAll('[data-paper]').forEach(b => b.onclick = () => {
+      const f = el.querySelector(`form[data-for="${b.dataset.paper}"]`); f.hidden = !f.hidden;
+      if(!f.hidden && !f.gotAt.value) f.gotAt.value = ui.today().slice(0,10) + 'T' + new Date(Date.now()+8*3600e3).toISOString().slice(11,16);
+    });
+    el.querySelectorAll('form.paper').forEach(f => f.onsubmit = async e => {
+      e.preventDefault();
+      const gotAt = f.gotAt.value.replace('T', ' ');
+      if(!gotAt){ f.gotAt.setAttribute('aria-invalid','true'); return; }
+      const res = await ui.run('pkg.collect', {id:f.dataset.for, how:'夜間紙本', gotAt}, {form:f, box:f.querySelector('.alert'), button:f.querySelector('button')});
+      if(res.ok) done('已補記夜間紙本領取' + (res.data.fee ? `，保管費 ${res.data.fee} 元` : ''));
+    });
+  }
+
+  /* ---------- 管委會：保管費月結（pkg.fees／pkg.feesClose，API.md 4.9）---------- */
+  async function feesTab(el, ui, month){
+    const {esc} = ui;
+    month = month || ui.month(-1);
+    el.innerHTML = `<form class="inline"><input type="month" name="m" value="${esc(month)}" aria-label="月份"><button class="btn small">查詢</button></form><div class="fees-body"></div>`;
+    el.querySelector('form').onsubmit = e => { e.preventDefault(); feesTab(el, ui, e.target.m.value); };
+    const body = el.querySelector('.fees-body'); ui.loading(body);
+    const r = await ui.run('pkg.fees', {month}); if(!r.ok){ body.innerHTML = ''; return; }
+    const d = r.data, ended = d.month < ui.month(0);
+    body.innerHTML = `${d.closed ? `<p class="okbox">${esc(d.month)} 已月結（${esc(d.closedAt)}）</p>` : `<p class="warnbox">${esc(d.month)} 尚未月結，以下為即時試算。</p>`}
+      ${d.rows.length ? `<table class="tbl"><thead><tr><th>戶號</th><th class="num">件數</th><th class="num">保管費</th></tr></thead><tbody>
+        ${d.rows.map(x => `<tr><td>${esc(x.unit)}</td><td class="num">${x.count}</td><td class="num">${ui.money(x.amount)}</td></tr>`).join('')}
+        <tr><th>合計</th><th class="num">${d.total.count}</th><th class="num">${ui.money(d.total.amount)}</th></tr></tbody></table>` : `<p class="muted">這個月沒有保管費。</p>`}
+      <p class="muted small">月份以領取日為準；保管費併入管理費帳單，由管委會島「財務」處理。</p>
+      ${ended ? `<button class="btn block" id="close">${d.closed ? '重新月結' : '執行月結'}</button>` : `<p class="muted small">月份結束後才能月結（每月 1 日 00:10 會自動執行）。</p>`}`;
+    const c = body.querySelector('#close');
+    if(c) c.onclick = () => ui.confirmTwice(c, async () => {
+      const res = await ui.run('pkg.feesClose', {month:d.month}, {button:c});
+      if(res.ok){ ui.toast(`已月結 ${res.data.month}：${res.data.units} 戶 ${res.data.amount} 元`); feesTab(el, ui, d.month); }
+    });
   }
 
   window.Panels = window.Panels || {};

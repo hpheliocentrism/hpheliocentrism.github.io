@@ -6,8 +6,11 @@
    ========================================================= */
 window.Auth = (function(){
   const KEY = 'hp_session';
-  const LEVELS = {pkg:['resident','sign','admin']};          // 其他島預設只有 resident < admin
+  // 各島等級由低到高（API.md 第 3 節、第 10.2 節）；沒列的島預設 resident < admin
+  const LEVELS = {pkg:['resident','sign','admin'], gym:['resident','guard','admin'], works:['resident','guard','admin'],
+                  ev:['resident','agent','admin'], fee:['resident','admin']};
   let session = null;                                        // {token, expiresAt, user}
+  let consent = null;                                        // 需要重新同意時：{version, text}（只放記憶體）
 
   const store = role => (role === 'admin' || role === 'committee') ? sessionStorage : localStorage;
   function safe(fn){ try{ return fn(); }catch(e){ return null; } }
@@ -32,7 +35,7 @@ window.Auth = (function(){
     document.dispatchEvent(new CustomEvent('auth:change'));
   }
   function clearStores(){ safe(() => localStorage.removeItem(KEY)); safe(() => sessionStorage.removeItem(KEY)); }
-  function clear(){ session = null; clearStores(); document.dispatchEvent(new CustomEvent('auth:change')); }
+  function clear(){ session = null; consent = null; clearStores(); document.dispatchEvent(new CustomEvent('auth:change')); }
 
   /* can('pkg:sign')；can('*:admin') = 任一島的 admin */
   function can(perm){
@@ -49,15 +52,22 @@ window.Auth = (function(){
     });
   }
 
+  const noteConsent = d => { consent = d && d.needReconsent ? {version:d.consentVersion, text:d.consentText} : null; };
   async function login(account, password){
     const res = await API.call('auth.login', {account, password});
-    if(res.ok) save(res.data);
+    if(res.ok){ noteConsent(res.data); save(res.data); }
     return res;
   }
   async function refresh(){
     if(!session) return null;
     const res = await API.call('auth.me');
-    if(res.ok){ save({token:session.token, expiresAt:session.expiresAt, user:res.data.user}); }
+    if(res.ok){ noteConsent(res.data); save({token:session.token, expiresAt:session.expiresAt, user:res.data.user}); }
+    return res;
+  }
+  /* 重新同意（API.md 4.1.1）：成功後同一個 token 繼續用 */
+  async function agree(version){
+    const res = await API.call('auth.consent', {consent:true, version});
+    if(res.ok){ consent = null; save({token:session.token, expiresAt:session.expiresAt, user:res.data.user}); }
     return res;
   }
 
@@ -66,7 +76,8 @@ window.Auth = (function(){
     token: () => session && session.token,
     user: () => session && session.user,
     loggedIn: () => !!session,
-    can, login, refresh, save, clear,
+    can, login, refresh, save, clear, agree, noteConsent,
+    consent: () => consent,
     logout(){ clear(); }
   };
 })();

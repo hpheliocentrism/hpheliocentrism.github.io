@@ -14,14 +14,14 @@ window.ISLANDS = [
    desc:'管委會公告、社區共同規範、各島規範總目錄'},
   {id:'package', name:'包裹島',     q:1,  r:-1, status:'building', prefix:'pkg',    stats:'pkg.stats', need:null,              prop:'boxes',
    desc:'待領包裹數量、我的包裹、管理員簽收'},
-  {id:'gym',     name:'健身房島',   q:1,  r:0,  status:'building', prefix:'gym',    stats:'',          need:'login',           prop:'gym',
+  {id:'gym',     name:'健身房島',   q:1,  r:0,  status:'building', prefix:'gym',    stats:'gym.stats', need:null,                prop:'gym',
    desc:'開放時間 09:00–21:00、使用額度與感應扣借還、使用守則'},
-  {id:'ev',      name:'充電車位島', q:0,  r:1,  status:'building', prefix:'ev',     stats:'',          need:'login',           prop:'ev',
+  {id:'ev',      name:'充電車位島', q:0,  r:1,  status:'building', prefix:'ev',     stats:'ev.stats',  need:null,                prop:'ev',
    desc:'住戶車位自設充電樁：申裝規格、施工與驗收、電費原則'},
   {id:'parking', name:'停車場島',   q:-1, r:0,  status:'building', prefix:'park',   stats:'',          need:'login',           prop:'parking',
    desc:'汽車與機車車位、無障礙車位、訪客車登記與停車規範'},
-  {id:'works',   name:'工程島',     q:-1, r:1,  status:'building', prefix:'works',  stats:'',          need:'login',           prop:'works', tagH:4.4,
+  {id:'works',   name:'工程島',     q:-1, r:1,  status:'building', prefix:'works',  stats:'works.stats', need:'login',           prop:'works', tagH:4.4,
    desc:'住戶裝修施工登記：施工廠商、施工日期與時段'},
-  {id:'admin',   name:'管委會島',   q:0,  r:-1, status:'building', prefix:'',       stats:'',          need:'*:admin',         prop:'office',
-   desc:'後台：帳號、屋主名單、規則參數、系統檢查'}
+  {id:'admin',   name:'管委會島',   q:0,  r:-1, status:'building', prefix:'fee',    stats:'',          need:'login',           prop:'office',
+   desc:'財務（本戶帳單、收支公布）、管委會公告、後台'}
 ];

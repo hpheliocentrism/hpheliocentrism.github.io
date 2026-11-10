@@ -12,20 +12,29 @@
    驗證頁測試連結：?mode=verify&t=demo-setup（屋主首次設定）、demo-family、demo-reset
 
    notice.* 是暫定格式：後端公告島模組完成前，前端先用這裡的假資料開發。
+   2.8.0：這裡沒寫的動作（gym／works／ev／fee 等）改回傳 mock/samples.js 的後端範例回應（不會真的改資料）。
+   測試開關（網址參數，只在假資料模式有效）：
+     ?consent=v2   模擬管委會把同意版本改成 v2：登入後要求重新同意，其他動作回 CONSENT_REQUIRED
+     ?night=1      模擬夜間；?self=1 模擬管委會開放夜間自助領取（兩者都有才顯示「我已領取」）
    ========================================================= */
 window.MockBackend = (function(){
-  const V = '2.1.0', PW = 'test1234';
+  const V = '2.8.0', PW = 'test1234';
+  const Q = new URLSearchParams(location.search);
+  const CV = Q.get('consent') || 'v1';                       // 「設定」表目前的同意版本
+  const SELF = Q.get('self') === '1';
   const UNITS = []; for(let f=2; f<=8; f++) ['A','B','C'].forEach(u => { if(!(f===8 && u==='C')) UNITS.push(f+u); });
   const PERMS = {
-    owner:['pkg:resident','notice:resident'], member:['pkg:resident','notice:resident'],
-    admin:['pkg:sign'], committee:['pkg:admin','acct:admin','sys:admin','notice:admin']
+    owner:['pkg:resident','gym:resident','works:resident','ev:resident','fee:resident'],
+    member:['pkg:resident','gym:resident','works:resident','ev:resident','fee:resident'],
+    admin:['pkg:sign','gym:guard','works:guard'],
+    committee:['pkg:admin','acct:admin','sys:admin','gym:admin','works:admin','ev:admin','fee:admin']
   };
   const LABEL = {owner:'屋主', member:'住戶', admin:'管理員', committee:'管委會'};
   const now = () => { const d = new Date(Date.now() + 8*3600e3); return d.toISOString().slice(0,16).replace('T',' '); };
 
   const accounts = [
     {id:'A-0001', login:'chair',             name:'王主委',   role:'committee', unit:'',   email:'',                  phone:'',           status:'啟用'},
-    {id:'A-0002', login:'owner@example.com', name:'測試A',    role:'owner',     unit:'2A', email:'owner@example.com', phone:'0912345678', status:'啟用'},
+    {id:'A-0002', login:'owner@example.com', name:'測試A',    role:'owner',     unit:'2A', email:'owner@example.com', phone:'0912345678', status:'啟用', extra:['ev:agent']},
     {id:'A-0003', login:'kid@example.com',   name:'小明',     role:'member',    unit:'2A', email:'kid@example.com',   phone:'',           status:'待驗證'},
     {id:'A-0004', login:'3b',                name:'王奶奶',   role:'member',    unit:'3B', email:'',                  phone:'0223456789', status:'啟用', must:true},
     {id:'A-0005', login:'guard1',            name:'管理員甲', role:'admin',     unit:'',   email:'',                  phone:'',           status:'啟用', must:true}
@@ -59,14 +68,16 @@ window.MockBackend = (function(){
   const ok = data => ({v:V, ok:true, data});
   const err = (code, error, field) => Object.assign({v:V, ok:false, code, error}, field ? {field} : {});
   const userView = a => ({id:a.id, name:a.name, role:a.role, roleLabel:LABEL[a.role], unit:a.unit, email:a.email, phone:a.phone,
-    perms:PERMS[a.role].slice(), mustChangePassword:!!a.must});
+    perms:PERMS[a.role].concat(a.extra || []), mustChangePassword:!!a.must});
+  const needRe = a => (a.cv || 'v1') !== CV;
+  const consentInfo = a => needRe(a) ? {needReconsent:true, consentVersion:CV, consentText:CONSENT.replace('（測試文字）', `（測試文字 ${CV}）`)} : {needReconsent:false};
   const issue = a => ({token:'mock.' + a.id, expiresAt:new Date(Date.now() + ((a.role==='admin'||a.role==='committee') ? 12 : 168)*3600e3).toISOString(), user:userView(a)});
   const night = () => { if(api.forceNight != null) return api.forceNight; const h = (new Date().getUTCHours() + 8) % 24; return h >= 18 || h < 6; };
   const bucket = st => st === '正常' ? 'normal' : (st === '可處理' || st === '可退件') ? 'soon' : 'attention';
-  const LEVELS = {pkg:['resident','sign','admin']};
+  const LEVELS = {pkg:['resident','sign','admin'], gym:['resident','guard','admin'], works:['resident','guard','admin'], ev:['resident','agent','admin'], fee:['resident','admin']};
   function can(a, perm){
     const [isl, lv] = perm.split(':');
-    return PERMS[a.role].some(p => { const [pi,pl] = p.split(':'); if(pi !== isl) return false;
+    return PERMS[a.role].concat(a.extra || []).some(p => { const [pi,pl] = p.split(':'); if(pi !== isl) return false;
       const o = LEVELS[pi] || ['resident','admin']; return o.indexOf(pl) >= o.indexOf(lv); });
   }
 
@@ -118,7 +129,7 @@ window.MockBackend = (function(){
       const a = accounts.find(x => x.login === String(b.account||'').trim().toLowerCase());
       if(!a || b.password !== PW) return err('AUTH_FAILED', '帳號或密碼錯誤');
       if(a.status !== '啟用') return err('AUTH_FAILED', '帳號尚未啟用或已停用');
-      return ok(issue(a));
+      return ok(Object.assign(issue(a), consentInfo(a)));
     },
     'auth.ownerStart': () => ok({message:'若資料相符，信件已寄出，請到信箱收信（也請看一下垃圾郵件匣）。（假資料模式：請改開 ?mode=verify&t=demo-setup）'}),
     'auth.forgot': () => ok({message:'若資料相符，信件已寄出，請到信箱收信（也請看一下垃圾郵件匣）。（假資料模式：請改開 ?mode=verify&t=demo-reset）'}),
@@ -133,10 +144,15 @@ window.MockBackend = (function(){
       if(String(b.password||'').length < 8) return err('VALIDATION', '密碼至少 8 個字', 'password');
       if(L.needConsent && b.consent !== true) return err('VALIDATION', '請先閱讀並勾選同意', 'consent');
       if(L.needPhone && !/^\+?[0-9]{8,15}$/.test(String(b.phone||'').replace(/[\s\-()]/g,''))) return err('VALIDATION', '請填寫正確的電話號碼', 'phone');
-      const a = accounts.find(x => x.id === L.acct); a.status = '啟用';
-      return ok(issue(a));
+      const a = accounts.find(x => x.id === L.acct); a.status = '啟用'; if(L.needConsent) a.cv = CV;
+      return ok(Object.assign(issue(a), consentInfo(a)));
     },
-    'auth.me': (b, a) => ok({user:userView(a)}),
+    'auth.me': (b, a) => ok(Object.assign({user:userView(a)}, consentInfo(a))),
+    'auth.consent': (b, a) => {
+      if(b.consent !== true) return err('VALIDATION', '請勾選同意', 'consent');
+      if(b.version !== CV) return err('VALIDATION', '告知事項剛更新，請重新閱讀', 'version');
+      a.cv = CV; return ok({user:userView(a), needReconsent:false});
+    },
     'auth.changePassword': (b, a) => {
       if(b.oldPassword !== PW) return err('AUTH_FAILED', '目前的密碼不正確');
       if(String(b.newPassword||'').length < 8) return err('VALIDATION', '新密碼至少 8 個字', 'newPassword');
@@ -155,19 +171,25 @@ window.MockBackend = (function(){
       accounts.push({id, login:b.email.toLowerCase(), name:b.name, role:'member', unit:a.unit, email:b.email, phone:b.phone||'', status:'待驗證'});
       return ok({id, status:'待驗證'});
     },
-    'acct.list': () => ok({accounts:accounts.map(a => Object.assign(userView(a), {status:a.status, login:a.login}))}),
+    'acct.list': () => ok({accounts:accounts.map(a => Object.assign(userView(a), {status:a.status, login:a.login, extra:(a.extra || []).join(','), consentVersion:a.cv || 'v1', consentAt:'2026-11-05 10:00', needReconsent:needRe(a)}))}),
+    'acct.update': b => { const a = accounts.find(x => x.id === b.id); if(!a) return err('NOT_FOUND', '找不到帳號');
+      if(b.consentVersion) a.cv = b.consentVersion; return ok({account:Object.assign(userView(a), {status:a.status, login:a.login, consentVersion:a.cv})}); },
     'owners.list': () => ok({owners:UNITS.map(u => {
       const o = accounts.find(a => a.unit === u && a.role === 'owner');
       return {unit:u, name:o ? o.name : '', email:o ? o.email : '', note:'', updatedAt:'', accountStatus:o ? o.status : '尚未設定'};
     })}),
     'pkg.stats': () => ok(stats()),
-    'pkg.mine': (b, a) => ok({unit:a.unit, packages:packages.filter(p => p.unit === a.unit).map(p => { const c = Object.assign({}, p); delete c.unit; delete c.temp; delete c.hasPhoto; return c; }), night:night()}),
+    'pkg.mine': (b, a) => ok({unit:a.unit, packages:packages.filter(p => p.unit === a.unit).map(p => { const c = Object.assign({}, p); delete c.unit; delete c.temp; delete c.hasPhoto; return c; }), night:night(), selfCollect:SELF}),
     'pkg.collect': (b, a) => {
       const p = packages.find(x => x.id === b.id); if(!p) return err('NOT_FOUND', '找不到這件包裹');
       const staff = can(a, 'pkg:sign');
-      if(!staff){ if(p.unit !== a.unit) return err('FORBIDDEN', '只能領取本戶的包裹'); if(!night()) return err('NIGHT_ONLY', '白天請向管理員出示通知並簽收'); }
+      if(!staff){ if(b.how || b.gotAt) return err('FORBIDDEN', '您沒有此操作的權限');
+        if(p.unit !== a.unit) return err('FORBIDDEN', '只能領取本戶的包裹'); if(!SELF) return err('FEATURE_OFF', '夜間自助領取目前未開放，請至管理室紙本登記');
+        if(!night()) return err('NIGHT_ONLY', '白天請向管理員出示通知並簽收'); }
+      if(b.gotAt && b.how !== '夜間紙本') return err('VALIDATION', '補記領取時間時，領取方式必須是「夜間紙本」', 'how');
+      if(b.gotAt && !(b.gotAt > p.time && b.gotAt <= now())) return err('VALIDATION', '領取時間須晚於簽收時間、且不得在未來', 'gotAt');
       packages = packages.filter(x => x !== p);
-      return ok({id:p.id, how:staff ? '值勤簽收' : '夜間自助'});
+      return ok({id:p.id, how:staff ? (b.how || '值勤簽收') : '夜間自助', fee:p.fee});
     },
     'pkg.pending': () => ok({packages:packages.slice(), night:night()}),
     'pkg.create': b => {
@@ -206,20 +228,29 @@ window.MockBackend = (function(){
     'pkg.announce':'pkg:sign', 'pkg.params':'pkg:admin', 'pkg.dataInfo':'pkg:admin', 'notice.list':'notice:resident'
   };
 
+  Object.assign(NEED, {'auth.consent':'login', 'acct.update':'acct:admin', 'pkg.fees':'pkg:admin', 'pkg.feesClose':'pkg:admin'});
+  /* samples.js 的動作：依前綴給最低權限（管理動作的細部權限以後端為準） */
+  const SAMPLE_NEED = act => /\.stats$/.test(act) || act === 'sys.ping' ? null
+    : act.startsWith('fee.') ? (/^fee\.(mine|reports|report)$/.test(act) ? 'fee:resident' : 'fee:admin')
+    : act.startsWith('gym.') ? 'gym:resident' : act.startsWith('works.') ? (act === 'works.calendar' ? 'works:resident' : /^works\.(today|announce)$/.test(act) ? 'works:guard' : 'works:admin')
+    : act.startsWith('ev.') ? (act === 'ev.mine' ? 'ev:resident' : /^ev\.(devices|calc|publish|correct|periods)$/.test(act) ? 'ev:agent' : 'ev:admin') : 'login';
+  const FIX = {'ev.stats': d => Object.assign({}, d, {installed:1}), 'fee.mine': (d, a) => Object.assign({}, d, {unit:a.unit})};
   function handle(b){
-    const fn = R[b.action];
+    let fn = R[b.action], need = NEED[b.action];
+    const S = window.MOCK_SAMPLES || {};
+    if(!fn && S[b.action]){ need = SAMPLE_NEED(b.action); fn = (q, a) => ok(FIX[b.action] ? FIX[b.action](JSON.parse(JSON.stringify(S[b.action])), a) : JSON.parse(JSON.stringify(S[b.action]))); }
     if(!fn) return err('UNKNOWN_ACTION', '未知的操作');
-    const need = NEED[b.action];
     let a = null;
-    if(need !== null){
+    if(need !== null && need !== undefined){
       if(!b.token) return err('AUTH_REQUIRED', '請先登入');
       a = accounts.find(x => 'mock.' + x.id === b.token && x.status === '啟用');
       if(!a) return err('AUTH_EXPIRED', '登入已過期，請重新登入');
+      if(needRe(a) && !['auth.me','auth.consent','auth.logoutAll'].includes(b.action)) return err('CONSENT_REQUIRED', '個人資料告知事項已更新，請先閱讀並勾選同意');
       if(need !== 'login' && !can(a, need)) return err('FORBIDDEN', '您沒有此操作的權限');
     }
     try{ return fn(b, a); }catch(e){ return e && e.code ? e : err('INTERNAL', '假資料後端錯誤：' + e.message); }
   }
 
-  const api = {handle, forceNight:null, PASSWORD:PW};
+  const api = {handle, forceNight:Q.get('night') === '1' ? true : Q.get('night') === '0' ? false : null, PASSWORD:PW};
   return api;
 })();

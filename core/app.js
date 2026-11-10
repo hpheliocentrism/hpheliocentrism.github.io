@@ -2,7 +2,8 @@
    網站/core/app.js — 主程式：路由、面板、登入、2D 後備（整合維護）
    - 網址 #<島id> 直接打開該島（QR Code 用 #package）
    - ?mode=verify&t=... 進入驗證頁（屋主首次設定、家人受邀、重設密碼）
-   - 各島面板放在 panels/<id>.js，註冊到 window.Panels[id] = {render(el, ui)}
+   - 各島面板放在 panels/<id>.js，註冊到 window.Panels[id] = {render(el, ui, island, opt)}；opt.tab＝要先打開的分頁
+   - 個資告知改版：登入回 needReconsent 或任何動作回 CONSENT_REQUIRED → 同意畫面（consentPage）
    ========================================================= */
 (function(){
   const $ = s => document.querySelector(s);
@@ -25,7 +26,8 @@
           const f = opts.form.querySelector(`[name="${res.field}"]`);
           if(f){ f.setAttribute('aria-invalid','true'); f.focus(); }
         }
-        if(opts.box){ opts.box.textContent = res.error; opts.box.hidden = false; } else ui.toast(res.error, 'error');
+        if(res.code === 'CONSENT_REQUIRED'){ /* 由 auth:consent 事件切到同意畫面 */ }
+        else if(opts.box){ opts.box.textContent = res.error; opts.box.hidden = false; } else ui.toast(res.error, 'error');
         if(res.code === 'AUTH_EXPIRED' || res.code === 'AUTH_REQUIRED') ui.showLogin('登入已過期，請重新登入');
       }
       return res;
@@ -38,6 +40,58 @@
     formData(form){ const o = {}; new FormData(form).forEach((v,k) => o[k] = typeof v === 'string' ? v.trim() : v); form.querySelectorAll('[aria-invalid]').forEach(e => e.removeAttribute('aria-invalid')); return o; },
     refresh(){ if(current) openIsland(current, {keepHash:true}); },
     showLogin, openIsland, closePanel,
+    /* 日期：台北時間 yyyy-MM-dd；month(-1) = 上個月 yyyy-MM */
+    today(offsetDays = 0){ return new Date(Date.now() + 8*3600e3 + offsetDays*864e5).toISOString().slice(0,10); },
+    month(offset = 0){ const t = ui.today(); let y = +t.slice(0,4), m = +t.slice(5,7) + offset;
+      while(m < 1){ m += 12; y--; } while(m > 12){ m -= 12; y++; } return y + '-' + String(m).padStart(2,'0'); },
+    money(n){ return n == null || n === '' ? '—' : Number(n).toLocaleString('zh-TW') + ' 元'; },
+    /* 分頁：defs = [{key, label, show(el)}]；回傳 {show(key)} */
+    tabs(el, defs, init){
+      el.innerHTML = `<div class="tabs" role="tablist">${defs.map(d => `<button role="tab" data-t="${d.key}">${esc(d.label)}</button>`).join('')}</div><div class="tab-body"></div>`;
+      const body = el.querySelector('.tab-body');
+      const show = k => { const d = defs.find(x => x.key === k) || defs[0];
+        el.querySelectorAll(':scope > .tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.t === d.key));
+        body.innerHTML = ''; d.show(body); };
+      el.querySelectorAll(':scope > .tabs [role=tab]').forEach(b => b.onclick = () => show(b.dataset.t));
+      show(init); return {show};
+    },
+    /* 可展開區塊：打開時才載入 */
+    fold(el, title, load, open){
+      const d = document.createElement('details'); d.className = 'fold';
+      d.innerHTML = `<summary>${esc(title)}</summary><div class="fold-body"></div>`; el.appendChild(d);
+      const body = d.querySelector('.fold-body');
+      d.addEventListener('toggle', () => { if(d.open) load(body); });
+      if(open) d.open = true;
+      return d;
+    },
+    /* 複製文字：失敗時選取文字讓使用者長按複製 */
+    async copy(text, pre){
+      try{ await navigator.clipboard.writeText(text); ui.toast('已複製，請貼到住戶 LINE 群組'); return true; }
+      catch(e){ if(pre){ const sel = getSelection(), rg = document.createRange(); rg.selectNodeContents(pre); sel.removeAllRanges(); sel.addRange(rg); } ui.toast('請長按選取的文字複製'); return false; }
+    },
+    /* 下載 CSV（Excel 可開，含 BOM） */
+    csv(name, rows){
+      const q = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const blob = new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\r\n')], {type:'text/csv;charset=utf-8'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    },
+    /* 各島參數表：<前綴>.params / <前綴>.setParam（API.md 10.4） */
+    async params(el, prefix, opts = {}){
+      ui.loading(el);
+      const r = await ui.run(prefix + '.params'); if(!r.ok){ el.innerHTML = ''; return; }
+      const rows = r.data.params.filter(p => p.name);
+      el.innerHTML = `<ul class="list">${rows.map(p => `<li class="item"><div class="row"><b>${esc(p.group ? p.group + '・' : '')}${esc(p.name)}</b><span class="muted small">${esc(p.unit)}</span></div>
+          ${p.note ? `<div class="small muted">${esc(p.note)}</div>` : ''}
+          <form class="inline" data-i="${p.index}"><input name="value" value="${esc(p.value)}" aria-label="${esc(p.name)}"${(opts.readonly || []).includes(p.index) ? ' disabled' : ''}>
+          <button class="btn small"${(opts.readonly || []).includes(p.index) ? ' disabled' : ''}>儲存</button></form></li>`).join('')}</ul>`;
+      el.querySelectorAll('form[data-i]').forEach(f => f.onsubmit = async e => {
+        e.preventDefault();
+        const raw = f.value.value.trim(), value = raw !== '' && !isNaN(raw) ? Number(raw) : raw;
+        const res = await ui.run(prefix + '.setParam', {index:+f.dataset.i, value}, {button:f.querySelector('button')});
+        if(res.ok) ui.toast('已儲存');
+      });
+    },
     /* 危險動作：第一次按變成「再按一次確認」 */
     confirmTwice(btn, fn){
       if(btn.dataset.armed){ delete btn.dataset.armed; btn.textContent = btn.dataset.orig; fn(); return; }
@@ -50,6 +104,7 @@
   /* ---------- 面板開關 ---------- */
   function openPanel(title, sub){
     pTitle.textContent = title; pSub.textContent = sub || '';
+    panel.classList.remove('wide');
     panel.classList.add('open'); panel.removeAttribute('inert');
   }
   function closePanel(){
@@ -80,7 +135,7 @@
       return;
     }
     const P = Panels[id];
-    if(P && P.render) P.render(host, ui, d);
+    if(P && P.render) P.render(host, ui, d, opt);
     else if(window.Rules && Rules.of(id).length) Rules.panel(host, ui, d);
     else host.innerHTML = `<p class="lead">這座島${STATUS_TEXT[d.status]}，規範與功能完成後會在這裡開放。</p>`;
   }
@@ -139,6 +194,7 @@
       btn.disabled = false; btn.textContent = '登入';
       if(!res.ok){ box.textContent = res.error; box.hidden = false; return; }
       ui.toast(`歡迎，${res.data.user.name}`);
+      if(res.data.needReconsent) return consentPage(Auth.consent(), done);
       done && done();
     };
     wrap.querySelector('[data-go=setup]').onclick = () => ownerStart();
@@ -176,6 +232,46 @@
     pBody.querySelector('#back').onclick = () => showLogin();
   }
 
+  /* ---------- 重新同意（個資告知改版，API.md 4.1.1）----------
+     auth.login／auth.me 回 needReconsent，或任何動作回 CONSENT_REQUIRED 時顯示。
+     大字、可捲動；不同意只能登出（包裹仍由管理室代收）。 */
+  let consentOpen = false;
+  function consentPage(info, after){
+    if(!info) return;
+    consentOpen = true; current = null;
+    openPanel('個資告知事項已更新', '請閱讀後勾選同意，才能繼續使用線上服務');
+    panel.classList.add('wide');
+    pBody.innerHTML = `<div class="consent big" tabindex="0">${esc(info.text || '')}</div>
+      <form class="form" novalidate>
+        <label class="check big"><input type="checkbox" name="ok"> 我已閱讀並同意以上個資告知（${esc(info.version || '')}）</label>
+        <p class="alert" hidden></p>
+        <button class="btn primary block" type="submit">同意並繼續</button>
+        <button class="btn ghost block" type="button" id="c-no">不同意，登出</button>
+        <p class="muted small">不同意仍可到管理室領取包裹，只是不能使用線上服務。</p>
+      </form>`;
+    const f = pBody.querySelector('form'), box = f.querySelector('.alert');
+    f.onsubmit = async e => {
+      e.preventDefault(); box.hidden = true;
+      if(!f.ok.checked){ box.textContent = '請先閱讀並勾選同意'; box.hidden = false; return; }
+      const btn = f.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = '處理中…';
+      const r = await Auth.agree(info.version);
+      btn.disabled = false; btn.textContent = '同意並繼續';
+      if(r.ok){ consentOpen = false; ui.toast('已記錄您的同意'); closePanel(); after && after(); return; }
+      if(r.code === 'VALIDATION' && r.field === 'version'){       // 剛好又改版：重新取得文字
+        const me = await Auth.refresh(); consentOpen = false;
+        if(me && me.ok && Auth.consent()) return consentPage(Auth.consent(), after);
+      }
+      box.textContent = r.error; box.hidden = false;
+    };
+    pBody.querySelector('#c-no').onclick = () => { consentOpen = false; Auth.logout(); closePanel(); ui.toast('已登出'); };
+  }
+  document.addEventListener('auth:consent', async () => {
+    if(consentOpen) return;
+    const back = current;
+    const me = await Auth.refresh();
+    if(me && me.ok && Auth.consent()) consentPage(Auth.consent(), () => { if(back) openIsland(back, {keepHash:true}); });
+  });
+
   /* ---------- 驗證頁：?mode=verify&t=... ---------- */
   async function verifyPage(t){
     openPanel('帳號設定', '');
@@ -212,7 +308,11 @@
       if(d.needPhone) body.phone = v.phone;
       if(d.needConsent) body.consent = true;
       const r = await ui.run('auth.complete', body, {form:f, box, button:f.querySelector('button')});
-      if(r.ok){ Auth.save(r.data); ui.toast('設定完成，已自動登入'); closePanel(); openIsland('package'); }
+      if(r.ok){
+        Auth.noteConsent(r.data); Auth.save(r.data); ui.toast('設定完成，已自動登入');
+        if(r.data.needReconsent) return consentPage(Auth.consent(), () => openIsland('package'));
+        closePanel(); openIsland('package');
+      }
     };
   }
 
@@ -224,13 +324,17 @@
     box.querySelectorAll('.fb-island').forEach(b => b.onclick = () => openIsland(b.dataset.id));
   }
 
-  /* ---------- 公開統計 → 3D 包裹島 ---------- */
+  /* ---------- 公開統計 → 3D 各島（註冊表 stats 欄；只有數量，免登入）---------- */
   async function pushStats(force){
     if(!use3D) return;
-    Scene.setLoading('package', true);
-    const res = await API.stats(force);
-    Scene.setLoading('package', false);
-    if(res.ok) Scene.setIslandData('package', res.data.total ? res.data : null);
+    const props = window.SceneProps || {};
+    await Promise.all(ISLANDS.filter(d => d.stats && props[d.id]).map(async d => {
+      Scene.setLoading(d.id, true);
+      const res = await API.stats(d.stats, force);
+      Scene.setLoading(d.id, false);
+      if(!res.ok) return;
+      Scene.setIslandData(d.id, d.id === 'package' && !res.data.total ? null : res.data);
+    }));
   }
   ui.pushStats = pushStats;
 
@@ -244,7 +348,9 @@
     }
     document.body.classList.toggle('mode-2d', !use3D);
     if(use3D){
-      Scene.onIslandClick(id => openIsland(id));
+      // 第二個參數：管委會島「財務」「公告」標示會帶 {adminTab:'fee'|'notice'}
+      Scene.onIslandClick((id, o) => openIsland(id, o && o.adminTab ? {tab:o.adminTab} : {}));
+      if(CONFIG.PARKING_DRAW) Scene.setIslandData('parking', CONFIG.PARKING_DRAW);   // 停車場島抽籤倒數看板
       document.querySelectorAll('.timebar button').forEach(b => b.onclick = () => Scene.setMode(b.dataset.mode));
       pushStats();
       setInterval(() => pushStats(), CONFIG.STATS_CACHE_MS);
@@ -255,7 +361,9 @@
     if(params.get('mode') === 'verify' && params.get('t')) verifyPage(params.get('t'));
     else if(location.hash.length > 1) setTimeout(() => openIsland(location.hash.slice(1), {keepHash:true}), use3D ? 300 : 0);
     addEventListener('hashchange', () => { const id = location.hash.slice(1); if(id && id !== current) openIsland(id, {keepHash:true}); });
-    if(Auth.loggedIn()) Auth.refresh();
+    if(Auth.loggedIn()) Auth.refresh().then(r => {
+      if(r && r.ok && Auth.consent() && !consentOpen) consentPage(Auth.consent(), () => { if(location.hash.length > 1) openIsland(location.hash.slice(1), {keepHash:true}); });
+    });
   }
   start();
 })();

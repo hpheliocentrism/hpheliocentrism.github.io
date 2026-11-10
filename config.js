@@ -10,5 +10,7 @@ window.CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzopIAaA2kzarFWMq7t--LnLANigZ8U_x413XLETzKbr0TdoRj8aXN3Skim7G7f385H/exec',   // 測試後端（環境=測試，管委會帳號部署）
   FRONT_URL: 'https://hpheliocentrism.github.io/',
   API_MAJOR: 2,            // 後端主版號；不符時提示重新整理
-  STATS_CACHE_MS: 5 * 60 * 1000
+  STATS_CACHE_MS: 5 * 60 * 1000,
+  // 停車場島 3D 倒數看板：只顯示時間。抽籤結束後保留（看板會改成「抽籤已完成」），不需要時整行刪掉
+  PARKING_DRAW: {drawAt:'2026-11-25T08:00:00+08:00', title:'機車位線上抽籤'}
 };

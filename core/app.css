@@ -151,3 +151,26 @@ body.mode-2d .fallback{display:block;position:relative;z-index:2;padding:16px 16
 .md-table th{background:var(--chip)}
 .linkrow{width:100%;text-align:left;background:none;font:inherit;color:inherit;cursor:pointer}
 .linkrow:focus-visible{outline:3px solid var(--ember);outline-offset:2px}
+
+/* 2.3.0 重新同意：寬版面板、大字 */
+@media (min-width:720px){ .panel.wide{width:min(720px,calc(100vw - 32px))} }
+@media (max-width:719px){ .panel.wide{max-height:92%} }
+.consent.big{max-height:min(55vh,520px);font-size:1.15rem;line-height:1.75;padding:14px 16px}
+.form .check.big{font-size:1.1rem}
+.form .check.big input{width:28px;height:28px}
+/* 參數、行內表單 */
+form.inline{display:flex;gap:6px;align-items:center}
+form.inline input,form.inline select{flex:1;min-width:0;font:1rem var(--font-body);padding:8px 10px;border:2px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tbl td.muted,.tbl .muted{color:var(--ink-soft)}
+.tbl tr.click{cursor:pointer}
+.tbl tr.click:hover td{background:var(--chip)}
+.daylist{display:flex;flex-direction:column;gap:8px}
+.day{border:1px solid var(--line);border-radius:14px;padding:8px 12px}
+.day.off{background:var(--chip)}
+.day h4{margin:0 0 4px;font-size:1rem;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.day .entry{font-size:.95rem;padding:3px 0;border-top:1px dashed var(--line)}
+.day .entry:first-of-type{border-top:0}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
+.kv dt{color:var(--ink-soft)}.kv dd{margin:0}

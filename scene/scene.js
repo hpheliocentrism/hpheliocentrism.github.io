@@ -445,6 +445,21 @@ function sedan(s = bmat.silver){
   g.add(box(.13,.045,.01,mat.white,0,.13,.517,false));                  // 空白車牌
   return g;
 }
+/* 休旅車（MPV）：車頭朝 -z，與 sedan() 相同做法 */
+function mpv(s){
+  const g = new THREE.Group();
+  const ext = (pts, w, m) => { const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([z,y]) => new THREE.Vector2(z,y))), {depth:w, bevelEnabled:false});
+    geo.rotateY(-Math.PI/2); geo.translate(w/2,0,0); const o = new THREE.Mesh(geo, m); o.castShadow = true; o.receiveShadow = true; return o; };
+  g.add(ext([[-.5,.08],[.5,.08],[.515,.16],[.505,.3],[.47,.36],[.3,.4],[-.24,.41],[-.36,.3],[-.48,.25],[-.515,.16]], .45, s));
+  g.add(ext([[.46,.305],[.44,.355],[.29,.395],[-.23,.405],[-.34,.3],[.44,.3]], .458, mat.glass));
+  g.add(box(.456,.035,1.0,M(0x2a2a2c),0,.095,0,false));
+  [[.32],[-.32]].forEach(([z]) => [1,-1].forEach(side => { const w = wheelHD(.085, side); w.position.set(side*.21,.085,z); g.add(w); }));
+  [1,-1].forEach(side => g.add(box(.05,.03,.035,s,side*.25,.31,-.28,false)));
+  [.15,-.15].forEach(x => { g.add(box(.1,.03,.015,mat.lamp,x,.22,-.512,false)); g.add(box(.08,.08,.015,M(0xb3121a,{emissive:0xff2a2a, emissiveIntensity:.35}),x*1.25,.3,.512,false)); });
+  g.add(box(.24,.06,.012,M(0x2a2a2c),0,.17,-.516,false));
+  g.add(box(.13,.045,.01,mat.white,0,.17,.517,false));
+  return g;
+}
 function scooter(c){
   const g = new THREE.Group();
   g.add(box(.09,.1,.26,c,0,.15,.03));
@@ -828,37 +843,70 @@ const PROPS = {
     chargers.forEach(c => c.coil.userData.dynamic = true);
     g.userData.ev = {T, P, ch:chargers[1], conn, cable, label, stall:stalls[1], charging:false};
   },
-  /* 停車場島：汽車位（含無障礙）、機車位、柵欄機與收費亭 */
+  /* 停車場島：依管委會車位圖與住戶照片（2026-11-11）做的一樓後側露天停車場（平面圖見 scene/plans/1f-rear-parking.svg）
+     汽車位 22、23（無障礙兼電動車位）＋斜線下車區；機車位 1–18（4、5 無障礙，18 自設）；北側大樓後牆與大門（在 11 號車位後方）、西側牆、東側植栽箱、兩支磚柱與樑。
+     1 公尺 ＝ 0.45 單位；車頭朝南（+z，中北三街）。不顯示車牌、戶號。 */
   parking(g){
-    ground(g,-3.7,-2.7,3.7,2.7,mat.curb,.05);
-    ground(g,-3.6,-2.6,3.6,2.6,mat.road,.06);
-    const line = (w,d,x,z) => g.add(box(w,.01,d,mat.white,x,.07,z,false));
-    // 北側汽車位 ×6（第 1 格無障礙）
-    for(let i=0;i<=6;i++) line(.03,1.25,-2.6+i*.68,1.3);
-    line(4.08+.03,.03,-.56,1.94);
-    const chair = new THREE.Mesh(new THREE.PlaneGeometry(.4,.4), new THREE.MeshBasicMaterial({map:chairTexture()}));
-    chair.rotation.x = -Math.PI/2; chair.position.set(-2.26,.072,1.3); g.add(chair);
-    [[-1.58,bmat.silver],[-.22,M(0xf3f1ec,{metalness:.2,roughness:.5})],[.46,M(0xb8352c,{metalness:.3,roughness:.45})],[1.14,M(0x2c3e5c,{metalness:.3,roughness:.45})]]
-      .forEach(([x,c]) => { const car = sedan(c); car.position.set(x,.06,1.3); car.rotation.y = Math.PI; g.add(car); });
-    // 南側：機車位 ×10 + 汽車位 ×2
-    for(let i=0;i<=10;i++) line(.02,.8,-3.1+i*.27,-1.55);
-    line(2.7+.02,.02,-1.75,-1.95);
-    const sc = [mat.white,bmat.black,M(0x3d7fc4),mat.white,M(0xb8352c),bmat.black,M(0x8fb34a)];
-    [0,1,2,4,5,7,8].forEach((k,i) => { const s2 = scooter(sc[i]); s2.position.set(-2.965+k*.27,.06,-1.6); s2.rotation.y = Math.PI; s2.scale.setScalar(1.2); g.add(s2); });
-    for(let i=0;i<=2;i++) line(.03,1.25,.1+i*.68,-1.3);
-    const car2 = sedan(M(0x4a4b50,{metalness:.3,roughness:.45})); car2.position.set(.44,.06,-1.3); g.add(car2);
-    // 車道中線箭頭
-    for(let x=-2.6;x<2.4;x+=.8) line(.4,.04,x,0);
-    // 東側出入口：柵欄機 + 收費亭
-    g.add(box(.5,.55,.5,bmat.cream,2.9,.34,-.95), box(.6,.06,.6,mat.trim,2.9,.65,-.95), box(.04,.22,.36,mat.glassLit,2.64,.42,-.95,false));
-    g.add(box(.12,.34,.12,mat.white,2.6,.23,-.45), box(.04,.04,.9,mat.stripe,2.6,.38,0));
-    // P 標誌、路燈、樹籬
-    g.add(cyl(.025,.025,1.1,6,mat.metal,3.35,.6,1.0));
-    const P = new THREE.Mesh(new THREE.PlaneGeometry(.42,.42), new THREE.MeshBasicMaterial({map:signTexture('P','#2c6fb7','#ffffff')}));
-    P.position.set(3.35,1.2,1.03); P.rotation.y = .6; g.add(P);
-    [[-3.3,2.3],[3.2,-2.3]].forEach(([x,z]) => g.add(cyl(.03,.04,1.6,6,mat.metal,x,.86,z), box(.16,.05,.12,mat.lamp,x,1.64,z)));
-    for(let x=-3.4;x<=3.4;x+=.32){ [2.95,-2.95].forEach(z => { if(insideHex(x,z,.15)){ const h = new THREE.Mesh(new THREE.IcosahedronGeometry(.17,0), Math.random()>.5?mat.leaf:mat.leafB); h.scale.set(1,.75,1); h.position.set(x,.14,z); h.castShadow = true; g.add(h); } }); }
-    g.add(tree(-4.3,0,1), tree(4.4,.9,.9), tree(-4,-1.6,.8));
+    const LOT = {"W":12.6,"D":7.8,"cars":[{"n":"23","x":0.15,"y":0,"w":2.5,"d":5.5,"acc":true,"ev":true},{"n":"22","x":4.15,"y":0,"w":2.5,"d":5.5,"acc":true,"ev":true}],"hatch":{"n":"","x":2.65,"y":0,"w":1.5,"d":5.5},"moto":[{"n":"4","x":9.75,"y":0,"w":2.25,"d":2.0,"acc":true},{"n":"5","x":9.75,"y":2.05,"w":2.25,"d":2.0,"acc":true},{"n":"3","x":8.75,"y":0,"w":1.0,"d":2.0},{"n":"2","x":7.75,"y":0,"w":1.0,"d":2.0},{"n":"1","x":6.75,"y":0,"w":1.0,"d":2.0},{"n":"6","x":9.0,"y":2.3,"w":0.75,"d":1.75},{"n":"7","x":8.25,"y":2.3,"w":0.75,"d":1.75},{"n":"8","x":7.25,"y":2.05,"w":1.0,"d":2.0},{"n":"9","x":10.8,"y":5.6,"w":1.0,"d":2.0},{"n":"10","x":9.8,"y":5.6,"w":1.0,"d":2.0},{"n":"11","x":8.25,"y":5.6,"w":1.0,"d":2.0},{"n":"12","x":7.25,"y":5.6,"w":1.0,"d":2.0},{"n":"13","x":6.25,"y":5.6,"w":1.0,"d":2.0},{"n":"14","x":5.25,"y":5.6,"w":1.0,"d":2.0},{"n":"15","x":4.25,"y":5.6,"w":1.0,"d":2.0},{"n":"16","x":3.5,"y":5.85,"w":0.75,"d":1.75},{"n":"17","x":2.75,"y":5.85,"w":0.75,"d":1.75},{"n":"18","x":2.0,"y":5.85,"w":0.75,"d":1.75,"own":true}],"pillars":[{"x":9.25,"y":1.95,"s":0.45},{"x":9.25,"y":6.6,"s":0.55}],"planters":{"x":12.05,"y":0.2,"w":0.5,"d":4.0},"door":{"x":8.25,"w":1.0}};
+    const K = .45, W = LOT.W, D = LOT.D;
+    const PX = x => (x - W/2)*K, PZ = y => (D/2 - y)*K;           // 平面圖座標（公尺）→ 島上座標
+    // 地坪：灰色磁磚＋車格線、編號、無障礙標誌（畫在同一張貼圖上）
+    const c = document.createElement('canvas'), SC = 60; c.width = W*SC; c.height = D*SC;
+    const x = c.getContext('2d'), cx = v => v*SC, cy = v => (D - v)*SC;
+    x.fillStyle = '#7f7d79'; x.fillRect(0,0,c.width,c.height);
+    x.strokeStyle = 'rgba(60,58,55,.55)'; x.lineWidth = 1.2;
+    for(let i=0;i<=W*4;i++){ x.beginPath(); x.moveTo(i*SC/4,0); x.lineTo(i*SC/4,c.height); x.stroke(); }
+    for(let j=0;j<=D*2;j++){ x.beginPath(); x.moveTo(0,j*SC/2); x.lineTo(c.width,j*SC/2); x.stroke(); }
+    const rect = (s, col) => { x.strokeStyle = col; x.lineWidth = 9; x.strokeRect(cx(s.x), cy(s.y+s.d), s.w*SC, s.d*SC); };
+    const chair = (px, py, sz) => {
+      x.fillStyle = '#3d7fc4'; x.fillRect(px-sz/2, py-sz/2, sz, sz);
+      x.strokeStyle = x.fillStyle = '#fff'; x.lineWidth = sz*.08; x.lineCap = 'round';
+      x.beginPath(); x.arc(px-sz*.05, py-sz*.3, sz*.08, 0, 7); x.fill();
+      x.beginPath(); x.moveTo(px-sz*.08, py-sz*.18); x.lineTo(px-sz*.08, py+sz*.02); x.lineTo(px+sz*.18, py+sz*.02); x.lineTo(px+sz*.26, py+sz*.28); x.stroke();
+      x.beginPath(); x.arc(px-sz*.05, py+sz*.15, sz*.2, Math.PI*.6, Math.PI*2.1); x.stroke();
+    };
+    // 編號從車道（南側）讀
+    const num = (t, px, py, sz) => { x.fillStyle = '#f4f4f0'; x.font = `700 ${sz}px sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(t, px, py); };
+    const h = LOT.hatch;
+    x.save(); x.beginPath(); x.rect(cx(h.x), cy(h.y+h.d), h.w*SC, h.d*SC); x.clip();
+    x.strokeStyle = '#f4f4f0'; x.lineWidth = 10;
+    for(let k=-30;k<40;k++){ x.beginPath(); x.moveTo(cx(h.x)+k*30, cy(h.y)); x.lineTo(cx(h.x)+k*30+160, cy(h.y+h.d)); x.stroke(); }
+    x.restore(); rect(h, '#3d7fc4');
+    LOT.cars.forEach(s => { rect(s, '#3d7fc4'); if(s.acc) chair(cx(s.x+s.w/2), cy(s.y+s.d*.45), 110); num(s.n, cx(s.x+s.w/2), cy(s.y)-40, 56); });
+    LOT.moto.forEach(s => { rect(s, s.acc ? '#3d7fc4' : '#f4f4f0');
+      if(s.acc){ chair(cx(s.x+s.w*.62), cy(s.y+s.d/2), 90); num(s.n, cx(s.x+.45), cy(s.y)-30, 40); }
+      else num(s.n, cx(s.x+s.w/2), cy(s.y)-30, 40); });
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W*K, D*K), M(0xffffff,{map:tex}));
+    floor.rotation.x = -Math.PI/2; floor.position.y = .07; floor.receiveShadow = true; g.add(floor);
+    g.add(box(W*K+.1,.06,D*K+.1,mat.curb,0,.03,0));
+    // 南側人行道（中北三街）
+    g.add(tbox(W*K+.4,.06,.6,tmat.walk,0,.03,PZ(0)+.32));
+    // 北側大樓後牆（深灰磁磚）＋銅色木門；西側牆＋防空避難指示
+    const wallH = 1.35;
+    g.add(tbox(W*K+.3,wallH,.2,tmat.brick,0,wallH/2,PZ(D)-.1));
+    g.add(box(LOT.door.w*K,.95,.04,bmat.door,PX(LOT.door.x+LOT.door.w/2),.48,PZ(D)+.01,false));
+    g.add(tbox(.2,wallH,D*K+.2,tmat.brick,PX(0)-.1,wallH/2,0));
+    g.add(box(.02,.1,.14,mat.white,PX(0)+.005,.6,PZ(1.2),false));
+    // 磚柱（淺灰混色磚；上方的樑省略，避免擋住俯視）
+    LOT.pillars.forEach(pl => g.add(tbox(pl.s*K,1.45,pl.s*K,tmat.brickLt,PX(pl.x+pl.s/2),.73,PZ(pl.y+pl.s/2))));
+    // 東側黑色植栽箱（羅漢松）
+    const pl = LOT.planters;
+    g.add(box(pl.w*K,.22,pl.d*K,bmat.black,PX(pl.x+pl.w/2),.11,PZ(pl.y+pl.d/2)));
+    for(let y=pl.y+.4; y<pl.y+pl.d; y+=.75) g.add(columnShrub(PX(pl.x+pl.w/2),.22,PZ(y),.75+Math.random()*.15));
+    // 汽車：23 白色休旅車、22 銀色轎車（車頭朝南，不顯示車牌與廠牌）
+    const car = (s, mk, sc) => { const v = mk(); v.scale.setScalar(sc); v.rotation.y = Math.PI; v.position.set(PX(s.x+s.w/2),.07,PZ(s.y+s.d/2)); g.add(v); };
+    car(LOT.cars[0], () => mpv(M(0xf3f1ec,{metalness:.2,roughness:.45})), 2.15);
+    car(LOT.cars[1], () => sedan(bmat.silver), 2.1);
+    // 斜線區北端的三角錐
+    [[LOT.hatch.x+.3, LOT.hatch.y+LOT.hatch.d-.2],[LOT.cars[0].x+LOT.cars[0].w/2, LOT.cars[0].y+LOT.cars[0].d+.05]].forEach(([cx2,cy2]) => {
+      g.add(cyl(.004,.07,.26,8,mat.orange,PX(cx2),.2,PZ(cy2)), cyl(.06,.06,.02,8,mat.white,PX(cx2),.19,PZ(cy2))); });
+    // 機車（停在北牆那一排與中間區，車頭朝北）
+    const byN = n => LOT.moto.find(m => m.n === n);
+    [['10',M(0x2c55c8)],['11',mat.white],['12',bmat.black],['13',M(0x3d6fb0)],['16',mat.white],['8',mat.white]].forEach(([n,col]) => {
+      const m = byN(n), sc2 = scooter(col); sc2.scale.setScalar(2.4); sc2.position.set(PX(m.x+m.w/2),.07,PZ(m.y+m.d/2)); g.add(sc2); });
+    // 樹與路燈
+    g.add(tree(-4.3,-1.6,.9), tree(4.5,1.2,.85), tree(-3.6,3.3,.8));
   },
   /* 工程島：施工中的住戶單元、鷹架與防護網、塔式起重機、廠商貨車、本週施工登記看板 */
   works(g){
@@ -912,6 +960,7 @@ const PROPS = {
     const cal = new THREE.Mesh(new THREE.PlaneGeometry(1.22,.74), new THREE.MeshBasicMaterial({map:calendarTexture()}));
     cal.position.set(0,.95,.03); board.add(cal);
     board.position.set(3.3,.0,2.0); board.rotation.y = .55; g.add(board);
+    board.userData.dynamic = true; g.userData.calMesh = cal; g.userData.calBoard = board;   // props/works.js 會換上本週資料
     // 建材：木板、油漆桶、工具箱、安全帽
     for(let i=0;i<4;i++) g.add(box(1.0,.04,.16,mat.wood,.8,.06+i*.045,-1.6+i*.02));
     [[1.5,-1.0],[1.65,-1.2],[1.4,-1.25]].forEach(([x,z]) => g.add(cyl(.08,.08,.16,10,mat.white,x,.12,z)));

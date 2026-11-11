@@ -56,7 +56,7 @@
 
   function build(group){
     const S = {data:null, lastMin:-1};
-    const root = new THREE.Group(); root.position.set(1.0, 0, 3.75); root.rotation.y = .3; root.visible = false; root.userData.dynamic = true;
+    const root = new THREE.Group(); root.position.set(-2.4, 0, 3.55); root.rotation.y = .45; root.visible = false; root.userData.dynamic = true;
     group.add(root); S.root = root;
     // 看板：兩支木柱＋藍框＋屋簷
     root.add(box(.09,1.3,.09,mat.post,-.82,.65,0), box(.09,1.3,.09,mat.post,.82,.65,0));

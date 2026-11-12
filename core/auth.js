@@ -8,7 +8,7 @@ window.Auth = (function(){
   const KEY = 'hp_session';
   // 各島等級由低到高（API.md 第 3 節、第 10.2 節）；沒列的島預設 resident < admin
   const LEVELS = {pkg:['resident','sign','admin'], gym:['resident','guard','admin'], works:['resident','guard','admin'],
-                  ev:['resident','agent','admin'], fee:['resident','admin']};
+                  ev:['resident','agent','admin'], fee:['resident','admin'], park:['resident','guard','admin']};
   let session = null;                                        // {token, expiresAt, user}
   let consent = null;                                        // 需要重新同意時：{version, text}（只放記憶體）
 

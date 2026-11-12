@@ -174,3 +174,18 @@ form.inline input,form.inline select{flex:1;min-width:0;font:1rem var(--font-bod
 .btnrow{display:flex;gap:6px;flex-wrap:wrap}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
 .kv dt{color:var(--ink-soft)}.kv dd{margin:0}
+
+/* 停車場島（panels/parking.js） */
+.pk-count b{font-size:1.15em;font-variant-numeric:tabular-nums}
+.pk-big{min-height:64px;font-size:1.2rem}
+.pk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;margin:8px 0}
+.pk-cell{border:2px solid var(--line);border-radius:14px;padding:8px 4px;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.pk-cell span{font-size:.75rem;color:var(--ink-soft)}
+.pk-cell strong{font:700 1.6rem var(--font-body);font-variant-numeric:tabular-nums}
+.pk-cell b{font-size:1.05rem}
+.pk-cell.me{border-color:var(--sun);background:var(--chip)}
+.pk-cell.roll b{color:var(--ink-soft)}
+.pk-slot{font:700 1rem var(--font-body);background:var(--sun);color:#3b2a1a;border-radius:999px;padding:2px 12px;white-space:nowrap}
+.pk-plan{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);background:#fff8ec}
+.pk-edit:empty{display:none}
+.pk-confirm{display:flex;flex-direction:column;gap:8px}

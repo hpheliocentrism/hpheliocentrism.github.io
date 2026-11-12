@@ -1,6 +1,6 @@
 /* =========================================================
    網站/core/api.js — 呼叫後端（整合維護）
-   規格：claude/community-core/API.md 第 1、2 節（v2.8.0）
+   規格：claude/community-core/API.md 第 1、2 節（v2.9.0）
    - CONSENT_REQUIRED：發出 auth:consent 事件，由 app.js 顯示同意畫面
    - 一律 POST 到同一個網址，Content-Type 必須是 text/plain，不加任何自訂標頭
    - 回傳 {ok, data} 或 {ok:false, code, error, field}
@@ -46,7 +46,7 @@ window.API = (function(){
     return res;
   }
 
-  /* 公開統計（pkg.stats、gym.stats、works.stats、ev.stats）：前端快取 5 分鐘；資料改動後呼叫 invalidateStats() */
+  /* 公開統計（pkg.stats、gym.stats、works.stats、ev.stats、park.stats）：前端快取 5 分鐘；資料改動後呼叫 invalidateStats() */
   async function stats(action, force){
     if(typeof action !== 'string'){ force = action; action = 'pkg.stats'; }
     const c = statsCache[action];

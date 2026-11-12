@@ -2,7 +2,7 @@
    網站/mock/mock.js — 假資料後端（整合維護，僅供驗證階段）
    config.js 設 MOCK = true 時，api.js 改呼叫這裡，不連任何伺服器。
    資料只存在記憶體，重新整理就回到初始狀態。全部是假資料，沒有真實個資。
-   回應格式比照 claude/community-core/API.md（v2.1.0）與 mock/samples.json。
+   回應格式比照後端 API.md（v2.1.0 起；停車場 park 為 v2.9.0）與 mock/samples.json。
 
    測試帳號（密碼一律 test1234，只在假資料模式有效）：
      chair               管委會
@@ -24,10 +24,10 @@ window.MockBackend = (function(){
   const SELF = Q.get('self') === '1';
   const UNITS = []; for(let f=2; f<=8; f++) ['A','B','C'].forEach(u => { if(!(f===8 && u==='C')) UNITS.push(f+u); });
   const PERMS = {
-    owner:['pkg:resident','gym:resident','works:resident','ev:resident','fee:resident'],
-    member:['pkg:resident','gym:resident','works:resident','ev:resident','fee:resident'],
-    admin:['pkg:sign','gym:guard','works:guard'],
-    committee:['pkg:admin','acct:admin','sys:admin','gym:admin','works:admin','ev:admin','fee:admin']
+    owner:['pkg:resident','gym:resident','works:resident','ev:resident','fee:resident','park:resident'],
+    member:['pkg:resident','gym:resident','works:resident','ev:resident','fee:resident','park:resident'],
+    admin:['pkg:sign','gym:guard','works:guard','park:guard'],
+    committee:['pkg:admin','acct:admin','sys:admin','gym:admin','works:admin','ev:admin','fee:admin','park:admin']
   };
   const LABEL = {owner:'屋主', member:'住戶', admin:'管理員', committee:'管委會'};
   const now = () => { const d = new Date(Date.now() + 8*3600e3); return d.toISOString().slice(0,16).replace('T',' '); };
@@ -74,7 +74,7 @@ window.MockBackend = (function(){
   const issue = a => ({token:'mock.' + a.id, expiresAt:new Date(Date.now() + ((a.role==='admin'||a.role==='committee') ? 12 : 168)*3600e3).toISOString(), user:userView(a)});
   const night = () => { if(api.forceNight != null) return api.forceNight; const h = (new Date().getUTCHours() + 8) % 24; return h >= 18 || h < 6; };
   const bucket = st => st === '正常' ? 'normal' : (st === '可處理' || st === '可退件') ? 'soon' : 'attention';
-  const LEVELS = {pkg:['resident','sign','admin'], gym:['resident','guard','admin'], works:['resident','guard','admin'], ev:['resident','agent','admin'], fee:['resident','admin']};
+  const LEVELS = {pkg:['resident','sign','admin'], gym:['resident','guard','admin'], works:['resident','guard','admin'], ev:['resident','agent','admin'], fee:['resident','admin'], park:['resident','guard','admin']};
   function can(a, perm){
     const [isl, lv] = perm.split(':');
     return PERMS[a.role].concat(a.extra || []).some(p => { const [pi,pl] = p.split(':'); if(pi !== isl) return false;
@@ -233,8 +233,19 @@ window.MockBackend = (function(){
   const SAMPLE_NEED = act => /\.stats$/.test(act) || act === 'sys.ping' ? null
     : act.startsWith('fee.') ? (/^fee\.(mine|reports|report)$/.test(act) ? 'fee:resident' : 'fee:admin')
     : act.startsWith('gym.') ? 'gym:resident' : act.startsWith('works.') ? (act === 'works.calendar' ? 'works:resident' : /^works\.(today|announce)$/.test(act) ? 'works:guard' : 'works:admin')
+    : act.startsWith('park.') ? (/^park\.(mine|result)$/.test(act) ? 'park:resident' : /^park\.(slots|list)$/.test(act) ? 'park:guard' : 'park:admin')
     : act.startsWith('ev.') ? (act === 'ev.mine' ? 'ev:resident' : /^ev\.(devices|calc|publish|correct|periods)$/.test(act) ? 'ev:agent' : 'ev:admin') : 'login';
   const FIX = {'ev.stats': d => Object.assign({}, d, {installed:1}), 'fee.mine': (d, a) => Object.assign({}, d, {unit:a.unit})};
+  /* 停車場：只記「抽了沒」，讓抽籤 → 結果 → 作廢的畫面走得通；名單、車位仍是固定範例（完整流程請接測試後端） */
+  let parkDrawn = false;
+  const PS = k => JSON.parse(JSON.stringify((window.MOCK_SAMPLES || {})[k]));
+  Object.assign(R, {
+    'park.draw': b => { if(parkDrawn) return err('CONFLICT', '已有正式抽籤結果。要重抽須先作廢並填原因'); if(b.confirm !== true) return ok(PS('park.draw')); parkDrawn = true; return ok(PS('park.draw:done')); },
+    'park.result': () => ok(PS(parkDrawn ? 'park.result:done' : 'park.result')),
+    'park.drawVoid': b => { if(!String(b.reason || '').trim()) return err('VALIDATION', '作廢須填原因', 'reason'); parkDrawn = false; return ok(PS('park.drawVoid')); },
+    'park.stats': () => ok(Object.assign(PS('park.stats'), parkDrawn ? {drawn:true, assignedSlots:3, assignedCars:3} : {}))
+  });
+  Object.assign(NEED, {'park.draw':'park:admin', 'park.drawVoid':'park:admin', 'park.result':'park:resident', 'park.stats':null});
   function handle(b){
     let fn = R[b.action], need = NEED[b.action];
     const S = window.MOCK_SAMPLES || {};

@@ -188,4 +188,5 @@ form.inline input,form.inline select{flex:1;min-width:0;font:1rem var(--font-bod
 .pk-slot{font:700 1rem var(--font-body);background:var(--sun);color:#3b2a1a;border-radius:999px;padding:2px 12px;white-space:nowrap}
 .pk-plan{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);background:#fff8ec}
 .pk-edit:empty{display:none}
+.pk-trial{border:2px solid #d9322a}
 .pk-confirm{display:flex;flex-direction:column;gap:8px}

@@ -10,6 +10,9 @@
    ========================================================= */
 window.ParkPanel = (function(){
   const TYPES = ['住戶登記','第二輛租用','物業店面租用','臨時'];
+  /* 試抽期間（config.js 的 PARKING_TRIAL）：所有人看到的結果都標示「測試、非正式」；正式抽籤前把該設定刪掉 */
+  const TRIAL = !!(window.CONFIG && CONFIG.PARKING_TRIAL);
+  const TRIAL_TAG = TRIAL ? '<p class="alert pk-trial"><b>【抽籤測試】以下是測試結果，不是正式結果。</b></p>' : '';
   const byNum = (a, b) => (Number(a) - Number(b)) || (a < b ? -1 : a > b ? 1 : 0);
 
   /* 抽籤演算法 park-draw-v1（與後端 Park.gs、後端/tools/park-draw-verify.js 相同）：種子 → mulberry32 → Fisher–Yates */
@@ -49,7 +52,8 @@ window.ParkPanel = (function(){
     if(!r.ok){ el.innerHTML = ''; return; }
     const d = r.data, left = new Date(d.drawAt) - Date.now();
     let head;
-    if(d.drawn) head = `<p class="okbox"><b>機車位抽籤已完成。</b>${Auth.loggedIn() ? '結果在下方「抽籤結果」。' : '結果請登入查看。'}</p>`;
+    if(d.drawn && TRIAL) head = `<p class="hintbox pk-count">正式抽籤時間：<b>${esc(drawTime(d.drawAt))}</b>。目前系統裡的抽籤結果是<b>測試用</b>，正式抽籤前會清除。</p>`;
+    else if(d.drawn) head = `<p class="okbox"><b>機車位抽籤已完成。</b>${Auth.loggedIn() ? '結果在下方「抽籤結果」。' : '結果請登入查看。'}</p>`;
     else if(left > 0){ const m = Math.ceil(left/60000);
       head = `<p class="hintbox pk-count">機車位線上抽籤：<b>${esc(drawTime(d.drawAt))}</b><br>還有 <b>${Math.floor(m/1440)}</b> 天 <b>${Math.floor(m%1440/60)}</b> 時 <b>${m%60}</b> 分</p>`; }
     else head = `<p class="hintbox pk-count">機車位線上抽籤時間 <b>${esc(drawTime(d.drawAt))}</b> 已到，等待管委會按下抽籤。</p>`;
@@ -62,7 +66,7 @@ window.ParkPanel = (function(){
   /* ---------- 抽籤結果（住戶以上；不含車牌） ---------- */
   function resultHtml(ui, d, unit){
     const {esc} = ui, ok = verify(d);
-    return `<p class="small muted">抽籤時間 ${esc(d.drawnAt)}・編號 ${esc(d.id)}</p>
+    return `${TRIAL_TAG}<p class="small muted">抽籤時間 ${esc(d.drawnAt)}・編號 ${esc(d.id)}</p>
       <div class="pk-grid">${d.results.map(x => `<div class="pk-cell${unit && x.unit === unit ? ' me' : ''}"><span>車位</span><strong>${esc(x.slot)}</strong><b>${esc(x.unit)}</b></div>`).join('')}</div>
       ${d.waitlist.length ? `<p class="warnbox">候補：${d.waitlist.map(w => `${w.order}. ${esc(w.unit)}`).join('、')}</p>` : ''}
       <details class="fold"><summary>怎麼確認抽籤公平？</summary><div class="fold-body small">
@@ -86,7 +90,7 @@ window.ParkPanel = (function(){
     const r = await ui.run('park.mine'); if(!r.ok){ el.innerHTML = ''; return; }
     const d = r.data;
     if(!d.items.length){ el.innerHTML = `<p class="lead">${esc(d.unit)} 目前沒有機車位登記。要登記或租用請洽管委會。</p>`; return; }
-    el.innerHTML = `<ul class="list">${d.items.map(x => `<li class="item">
+    el.innerHTML = `${d.items.some(x => x.slot) ? TRIAL_TAG : ''}<ul class="list">${d.items.map(x => `<li class="item">
         <div class="row"><b>${esc(x.type)}</b>${x.slot ? `<span class="pk-slot">車位 ${esc(x.slot)}</span>` : `<span class="tag-s ${x.draw ? 'warn' : ''}">${esc(x.draw || (x.confirm === '已確認' ? (d.drawn ? '尚未分配' : '等待抽籤') : '待管委會確認'))}</span>`}</div>
         <div class="small muted">車牌 ${x.plate ? esc(x.plate) : '尚未提供（請告知管委會）'}・每月 ${ui.money(x.fee)}${x.startMonth ? '・' + esc(x.startMonth) + ' 起算' : ''}</div></li>`).join('')}</ul>
       ${d.drawn ? '' : `<p class="muted small">抽籤時間：${esc(d.drawAt)}。只有「已確認」的住戶登記會參加抽籤。</p>`}
@@ -246,7 +250,7 @@ window.ParkPanel = (function(){
     });
   }
   function drawn(el, ui, d, fresh){
-    el.innerHTML = `${fresh ? `<p class="okbox"><b>抽籤完成，結果已公布。</b>接著可到「租用」分配租用車位。</p>` : ''}
+    el.innerHTML = `${fresh ? `<p class="okbox"><b>${TRIAL ? '試抽完成。' : '抽籤完成，結果已公布。'}</b>接著可到「租用」分配租用車位。</p>` : ''}
       ${resultHtml(ui, d)}
       <details class="fold"><summary>作廢重抽</summary><div class="fold-body">
         <p class="small muted">只有名單或車位有誤時才使用。作廢後舊結果仍會留在紀錄裡，住戶的車位分配會清除，要重新按抽籤。</p>
@@ -326,7 +330,7 @@ window.ParkPanel = (function(){
       tabs.unshift({key:'mine', label:'我的車位', show:b => mine(b, ui)});
       if(!tabs.some(t => t.key === 'result') && !Auth.can('park:admin')) tabs.push({key:'result', label:'抽籤結果', show:b => result(b, ui)});
     }
-    el.innerHTML = `<div class="pk-top"></div><div class="pk-main"></div>
+    el.innerHTML = `${TRIAL ? `<p class="alert pk-trial"><b>【測試中】</b>停車場島正在測試抽籤功能，這裡的名單、車位分配與抽籤結果都是<b>測試資料，不是正式結果</b>。正式抽籤時間見下方。</p>` : ''}<div class="pk-top"></div><div class="pk-main"></div>
       <details class="fold"><summary>機車位平面圖</summary><div class="fold-body"><img class="pk-plan" src="scene/plans/1f-rear-parking.svg" alt="一樓後側露天停車場平面圖，機車位 1 到 18 號" loading="lazy">
         <p class="muted small">下方是中北三街；北排（16–18、9–15）離馬路最遠。</p></div></details>
       <section class="pk-rules"></section>`;

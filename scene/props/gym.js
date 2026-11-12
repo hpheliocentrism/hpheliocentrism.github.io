@@ -8,7 +8,7 @@
    顯示「本時段」與「下一時段」的感應扣借出／登記數量（只有數量，沒有戶號、姓名）。
    對外：{ build(group), update(group, data), empty(group), tick(group, dt, t) }
    data（建議由 gym.stats 提供，欄位皆可省略）：
-     { open:true|false, closedReason:'保養', broken:0,
+     { open:true|false, closedReason:'保養', broken:0,          // 開放中：吊燈與玻璃亮暖光；閉館：燈暗；暫停開放：前方掛紅色吊牌（原因類別）
        slotNow:{start:'10:30', end:'12:00', borrowed:1},     // 本時段借出中的感應扣數
        slotNext:{start:'12:00', end:'13:30', booked:0} }     // 下一時段已登記（含夜間預約）數
    沒有 slotNow／slotNext 時，時段由瀏覽器時間計算、數量顯示「—」。
@@ -222,6 +222,26 @@
     return {g, draw};
   }
 
+  /* ---------- 暫停開放吊牌 ---------- */
+  function makeCloseSign(){
+    const g = new THREE.Group(); g.userData.dynamic = true; g.visible = false;
+    [-.42,.42].forEach(x => g.add(box(.012,.3,.012,mat.frame,x,.17,0,false)));
+    g.add(box(1.04,.4,.04,mat.tmRed,0,-.02,0));
+    const c = document.createElement('canvas'); c.width = 512; c.height = 180;
+    const ctx = c.getContext('2d'), tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(.98,.345), new THREE.MeshBasicMaterial({map:tex})); face.position.z = .022; g.add(face);
+    let last = null;
+    function draw(reason){
+      if(reason === last) return; last = reason;
+      ctx.fillStyle = '#c4281f'; ctx.fillRect(0,0,512,180);
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `900 76px ${FONT}`; ctx.fillText('暫停開放', 256, 70);
+      ctx.font = `700 40px ${FONT}`; ctx.fillText(`${reason}中`, 256, 142);
+      tex.needsUpdate = true;
+    }
+    return {g, draw};
+  }
+
   /* ---------- 建造 ---------- */
   function build(group){
     const S = {data:null, slotKey:null, runners:[], tms:[], lastMin:-1};
@@ -237,12 +257,24 @@
     stat.add(box(.12,1.75,3.3,mat.wall,-2.24,FL+.875,0));
     stat.add(box(.6,.2,.16,mat.ac,1.6,FL+1.45,-1.47));
     // 右側玻璃牆（通往空中花園，門窗隨手關）＋框
-    const glass = box(.04,1.6,2.6,mat.glass,2.26,FL+.8,-.25,false); glass.userData.dynamic = true; group.add(glass);
+    const glass = box(.04,1.6,2.6,mat.glass.clone(),2.26,FL+.8,-.25,false); glass.userData.dynamic = true; group.add(glass);
     [-1.55,-.25,1.05].forEach(z => stat.add(box(.07,1.7,.07,mat.frame,2.26,FL+.85,z)));
     stat.add(box(.07,.07,2.67,mat.frame,2.26,FL+1.68,-.25));
     // 頂部樑架（不加屋頂，方便看到室內）
     stat.add(box(4.6,.08,.1,mat.frame,0,FL+1.8,-1.55), box(.1,.08,3.3,mat.frame,-2.2,FL+1.8,0), box(.1,.08,3.3,mat.frame,2.2,FL+1.8,0));
     for(let x=-1.6; x<2; x+=.8) stat.add(box(.04,.04,3.2,mat.frame,x,FL+1.8,0));
+    // 吊燈（開放中亮、閉館暗）＋室內暖光：材質共用，切換時只換顏色，不重建
+    S.lampM = M(0xfff1c8,{emissive:0xffd88a, emissiveIntensity:1.1, roughness:.4});
+    const lamps = new THREE.Group(); lamps.userData.dynamic = true; group.add(lamps);
+    [[-1.2,-.7],[.4,-.7],[-1.2,.6],[.4,.6]].forEach(([x,z]) => {
+      lamps.add(box(.012,.16,.012,mat.frame,x,FL+1.7,z,false));
+      lamps.add(box(.5,.04,.16,S.lampM,x,FL+1.6,z,false));
+    });
+    S.glow = new THREE.Mesh(new THREE.PlaneGeometry(4.2,2.9), new THREE.MeshBasicMaterial({color:0xffc870, transparent:true, opacity:.16, depthWrite:false, blending:THREE.AdditiveBlending}));
+    S.glow.rotation.x = -Math.PI/2; S.glow.position.set(0,FL+.012,-.1); S.glow.userData.dynamic = true; group.add(S.glow);
+    S.glassM = glass.material;
+    // 暫停開放吊牌（保養、清潔、施工、天候、其他；非開放時間不掛）
+    S.closeSign = makeCloseSign(); S.closeSign.g.position.set(.25, FL+1.38, 1.62); group.add(S.closeSign.g);
     // 跑步機 ×2，面向鏡牆
     [-.7,.7].forEach((x,i) => {
       const tm = makeTreadmill(); tm.g.scale.setScalar(S_M); tm.g.position.set(x,FL,-.35);
@@ -281,9 +313,15 @@
     const sNow = d.slotNow || sl.now, sNext = d.slotNext || sl.next;
     const num = v => typeof v === 'number' ? String(v) : '—';
     const broken = Math.max(0, Math.min(2, d.broken|0));
+    // 暫停開放＝管委會設的關閉時段（有原因類別）；「非開放時間」只是閉館
+    const paused = !open && !!d.closedReason && d.closedReason !== '非開放時間';
+    S.lampM.color.setHex(open ? 0xfff1c8 : 0x8c8f94); S.lampM.emissive.setHex(open ? 0xffd88a : 0x000000);
+    S.glow.visible = open;
+    S.glassM.emissive.setHex(open ? 0xffd890 : 0x000000); S.glassM.emissiveIntensity = open ? .35 : 0; S.glassM.opacity = open ? .45 : .35;
+    S.closeSign.g.visible = paused; if(paused) S.closeSign.draw(d.closedReason);
     S.board.draw({
       open,
-      status: open ? '開放中' : (d.closedReason ? `暫停開放（${d.closedReason}）` : '已閉館'),
+      status: open ? '開放中' : (paused ? `暫停開放（${d.closedReason}）` : '已閉館'),
       nowTime: open && sNow ? `${sNow.start}–${sNow.end}` : '目前不開放',
       nowN: open ? num(d.slotNow && d.slotNow.borrowed) : '0',
       nextTime: sNext ? `${sNext.day || ''}${sNext.day ? ' ' : ''}${sNext.start}–${sNext.end}` : '—',

@@ -1,6 +1,6 @@
 /* =========================================================
    網站/core/app.js — 主程式：路由、面板、登入、2D 後備（整合維護）
-   - 網址 #<島id> 直接打開該島（QR Code 用 #package）
+   - 網址 #<島id> 直接打開該島（QR Code 用 #package）；#help 打開使用說明（panels/help.js）
    - ?mode=verify&t=... 進入驗證頁（屋主首次設定、家人受邀、重設密碼）
    - 各島面板放在 panels/<id>.js，註冊到 window.Panels[id] = {render(el, ui, island, opt)}；opt.tab＝要先打開的分頁
    - 個資告知改版：登入回 needReconsent 或任何動作回 CONSENT_REQUIRED → 同意畫面（consentPage）
@@ -39,7 +39,7 @@
     loading(el, text){ el.innerHTML = `<p class="muted loading">${esc(text || '讀取中…')}</p>`; },
     formData(form){ const o = {}; new FormData(form).forEach((v,k) => o[k] = typeof v === 'string' ? v.trim() : v); form.querySelectorAll('[aria-invalid]').forEach(e => e.removeAttribute('aria-invalid')); return o; },
     refresh(){ if(current) openIsland(current, {keepHash:true}); },
-    showLogin, openIsland, closePanel,
+    showLogin, openIsland, closePanel, showHelp,
     /* 日期：台北時間 yyyy-MM-dd；month(-1) = 上個月 yyyy-MM */
     today(offsetDays = 0){ return new Date(Date.now() + 8*3600e3 + offsetDays*864e5).toISOString().slice(0,10); },
     month(offset = 0){ const t = ui.today(); let y = +t.slice(0,4), m = +t.slice(5,7) + offset;
@@ -140,6 +140,20 @@
     else host.innerHTML = `<p class="lead">這座島${STATUS_TEXT[d.status]}，規範與功能完成後會在這裡開放。</p>`;
   }
 
+  /* ---------- 網站導覽與使用說明（panels/help.js；網址 #help） ---------- */
+  function showHelp(){
+    current = null;
+    openPanel('使用說明', '網站導覽：怎麼看、怎麼登入、每座島能做什麼');
+    if(use3D) Scene.unfocus();
+    try{ history.replaceState(null, '', '#help'); }catch(e){}
+    pBody.innerHTML = '';
+    const host = document.createElement('div'); host.className = 'p-content'; pBody.appendChild(host);
+    Help.render(host, ui, {use3D});
+    pBody.scrollTop = 0;
+  }
+  const route = (id, opt) => id === 'help' ? showHelp() : openIsland(id, opt);
+  $('#btn-help').onclick = showHelp;
+
   /* ---------- 頂列：登入狀態 ---------- */
   function renderUser(){
     const u = Auth.user(), el = $('#userbox');
@@ -169,7 +183,8 @@
     pBody.innerHTML = '';
     const host = document.createElement('div'); pBody.appendChild(host);
     if(msg) host.insertAdjacentHTML('beforeend', `<p class="alert">${esc(msg)}</p>`);
-    loginForm(host, () => { closePanel(); const back = location.hash.slice(1); if(back) openIsland(back); });
+    const back = location.hash.slice(1);      // 從哪裡來的（closePanel 會清掉網址的 #）
+    loginForm(host, () => { closePanel(); if(back) route(back); });
   }
   function loginForm(host, done){
     const wrap = document.createElement('div');
@@ -319,9 +334,11 @@
   /* ---------- 2D 後備畫面（WebGL 不可用，或使用者選擇簡易模式） ---------- */
   function render2D(){
     const box = $('#fallback'); if(use3D || !box) return;
-    box.innerHTML = `<p class="fb-lead">${use3D ? '' : '簡易模式：點選下方小島進入'}</p><div class="fb-grid">` +
+    box.innerHTML = `<p class="fb-lead">${use3D ? '' : '簡易模式：點選下方小島進入'}</p>
+      <button class="fb-help" id="fb-help"><b>第一次來？看使用說明</b><span>怎麼登入、每座島能做什麼</span></button><div class="fb-grid">` +
       ISLANDS.map(d => `<button class="fb-island" data-id="${d.id}"><b>${esc(d.name)}</b><span>${esc(d.desc)}</span>${d.status !== 'open' ? `<em>${STATUS_TEXT[d.status]}</em>` : ''}</button>`).join('') + `</div>`;
     box.querySelectorAll('.fb-island').forEach(b => b.onclick = () => openIsland(b.dataset.id));
+    box.querySelector('#fb-help').onclick = showHelp;
   }
 
   /* ---------- 公開統計 → 3D 各島（註冊表 stats 欄；只有數量，免登入）---------- */
@@ -359,10 +376,10 @@
     if(CONFIG.MOCK) $('#mockflag').hidden = false;
 
     if(params.get('mode') === 'verify' && params.get('t')) verifyPage(params.get('t'));
-    else if(location.hash.length > 1) setTimeout(() => openIsland(location.hash.slice(1), {keepHash:true}), use3D ? 300 : 0);
-    addEventListener('hashchange', () => { const id = location.hash.slice(1); if(id && id !== current) openIsland(id, {keepHash:true}); });
+    else if(location.hash.length > 1) setTimeout(() => route(location.hash.slice(1), {keepHash:true}), use3D ? 300 : 0);
+    addEventListener('hashchange', () => { const id = location.hash.slice(1); if(id && id !== current) route(id, {keepHash:true}); });
     if(Auth.loggedIn()) Auth.refresh().then(r => {
-      if(r && r.ok && Auth.consent() && !consentOpen) consentPage(Auth.consent(), () => { if(location.hash.length > 1) openIsland(location.hash.slice(1), {keepHash:true}); });
+      if(r && r.ok && Auth.consent() && !consentOpen) consentPage(Auth.consent(), () => { if(location.hash.length > 1) route(location.hash.slice(1), {keepHash:true}); });
     });
   }
   start();

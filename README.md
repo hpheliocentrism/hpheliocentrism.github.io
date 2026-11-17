@@ -11,6 +11,7 @@
 | `islands/registry.js` | 整合 | 島嶼註冊表，與 `整合/README.md` 第 3 節一致 |
 | `core/api.js` `core/auth.js` `core/app.js` `core/app.css` | 整合 | 呼叫後端、登入、路由、面板外框、2D 簡易模式 |
 | `panels/<島>.js` | 整合 | 各島的面板（清單、表單） |
+| `panels/help.js` | 整合 | 網站導覽與使用說明（頂列「使用說明」、網址 `#help`）；各島功能變動時一起更新 |
 | `mock/mock.js` | 整合 | 假資料後端（驗證階段用） |
 | `scene/scene.js` `scene/theme.css` `scene/props/<島>.js` | 美術 | 3D 場景、配色字型、各島造景 |
 
@@ -20,6 +21,7 @@
 |---|---|
 | `…/` | 群島首頁 |
 | `…/#package` | 直接打開包裹島（QR Code 用這個） |
+| `…/#help` | 直接打開使用說明（可貼到 LINE 群組） |
 | `…/?view=2d` | 強制簡易模式（不載入 3D） |
 | `…/?mode=verify&t=…` | 驗證信連結（屋主首次設定、家人受邀、重設密碼） |
 

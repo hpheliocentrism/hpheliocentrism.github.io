@@ -8,7 +8,7 @@
    規格：claude/community-core/API.md 第 4.5～4.8 節
    ========================================================= */
 (function(){
-  const STAGE_TONE = s => s === '正常' ? 'ok' : (s === '可處理' || s === '可退件') ? 'bad' : 'warn';
+  const STAGE_TONE = s => s === '正常' ? 'ok' : (s === '可處理' || s === '可退件' || s === '可退回郵局') ? 'bad' : 'warn';
 
   async function render(el, ui){
     const {esc} = ui;
@@ -48,7 +48,8 @@
     const self = !!res.data.selfCollect && !!night;     // 2.2.0：管委會開放夜間自助且現在是夜間，才顯示「我已領取」
     el.innerHTML = `<h3>${esc(unit)} 的待領包裹</h3>` + (packages.length ? `<ul class="list">${packages.map(p => `
         <li class="item">
-          <div class="row"><b>${esc(p.cls)}</b><span class="tag-s ${STAGE_TONE(p.stage)}">${esc(p.stage)}</span></div>
+          <div class="row"><b>${esc(p.cls)}${p.registered ? ' <span class="tag-s bad">掛號</span>' : ''}</b><span class="tag-s ${STAGE_TONE(p.stage)}">${esc(p.stage)}</span></div>
+          ${p.recipient ? `<div class="small">收件人：${esc(p.recipient)}</div>` : ''}
           <div class="muted small">簽收 ${esc(p.time)}・已存放 ${p.days} 天${p.countdown > 0 ? `・距可處理 ${p.countdown} ${esc(p.cdUnit)}` : ''}${p.fee ? `・保管費 ${p.fee} 元` : ''}</div>
           ${p.note ? `<div class="small">${esc(p.note)}</div>` : ''}
           ${self ? `<button class="btn small primary" data-collect="${esc(p.id)}">我已領取</button>` : ''}
@@ -115,10 +116,10 @@
         <pre class="announce">${esc(a.text)}</pre><button class="btn primary block" id="copy">複製公告並記錄</button></details>
       <h3>今天到規則日（${d.hits.length} 戶）</h3>
       ${d.hits.length ? `<ul class="list">${d.hits.map(h => `<li class="item"><div class="row"><b>${esc(h.unit)}</b></div>
-        ${h.items.map(i => `<div class="small">${esc(i.cls)}・${esc(i.stage)}・${esc(i.msg)}</div>`).join('')}
+        ${h.items.map(i => `<div class="small">${i.registered ? '<span class="tag-s bad">掛號</span> ' : ''}${esc(i.cls)}・${esc(i.stage)}・${esc(i.msg)}${i.recipient ? '・收件人 ' + esc(i.recipient) : ''}${i.trackTail ? '・末4碼 ' + esc(i.trackTail) : ''}</div>`).join('')}
         ${contacts(h.contacts, esc)}</li>`).join('')}</ul>` : '<p class="muted small">無</p>'}
       <h3>逾期／催告中（${d.overdue.length} 戶）</h3>
-      ${d.overdue.length ? `<ul class="list">${d.overdue.map(o => `<li class="item"><div class="row"><b>${esc(o.unit)}</b><span class="tag-s ${STAGE_TONE(o.worst)}">${esc(o.worst)}</span></div>
+      ${d.overdue.length ? `<ul class="list">${d.overdue.map(o => `<li class="item"><div class="row"><b>${esc(o.unit)} ${o.registered ? `<span class="tag-s bad">掛號 ${+o.registered} 件</span>` : ''}</b><span class="tag-s ${STAGE_TONE(o.worst)}">${esc(o.worst)}</span></div>
         <div class="small muted">小型 ${o.counts['小型']}・大型 ${o.counts['大型']}・冷藏 ${o.counts['冷藏']}・最久 ${o.maxDays} 天${o.fee ? `・保管費 ${o.fee} 元` : ''}</div>
         ${contacts(o.contacts, esc)}</li>`).join('')}</ul>` : '<p class="muted small">無</p>'}`;
     el.querySelector('#copy').onclick = async e => {
@@ -132,35 +133,38 @@
   }
   const contacts = (cs, esc) => cs && cs.length ? `<div class="small">${cs.map(c => `${esc(c.name)}（${esc(c.roleLabel)}）<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>`).join('、')}</div>` : `<div class="small muted">無聯絡電話</div>`;
 
+  function registeredCollect(){
+    const collector = (prompt('請輸入領取人姓名') || '').trim(); if(!collector) return null;
+    const proxy = confirm('是否非本人領取（已收授權）？');
+    return {collector, proxy};
+  }
+
   function signTab(el, ui){
     el.innerHTML = `<form class="form" novalidate>
-        <label>戶號<input name="unit" required placeholder="例如 5A" autocapitalize="characters" inputmode="text"></label>
-        <fieldset class="seg"><legend>溫層</legend>
-          <label><input type="radio" name="temp" value="常溫" checked> 常溫</label><label><input type="radio" name="temp" value="冷藏"> 冷藏</label></fieldset>
-        <div class="dims"><label>長<input name="l" type="number" inputmode="numeric" min="1"></label><label>寬<input name="w" type="number" inputmode="numeric" min="1"></label><label>高<input name="h" type="number" inputmode="numeric" min="1"></label><span class="muted small">公分</span></div>
-        <p class="muted small" id="auto"></p>
-        <label>改判類別（選填）<select name="finalClass"><option value="">依系統判定</option><option>小型</option><option>大型</option></select></label>
-        <label id="reason-l" hidden>改判原因<input name="reason"></label>
+        <div class="row"><label>門牌號<select name="door" required><option value="">請選擇</option><option value="2">2號</option><option value="6">6號</option><option value="8">8號</option></select></label><label>樓層<select name="floor" required><option value="">請選擇</option>${Array.from({length:8},(_,i)=>`<option value="${i+1}">${i+1}樓</option>`).join('')}</select></label></div>
+        <p class="warnbox unit-error" hidden>請選擇門牌號與樓層。</p><p class="muted small" id="unit-preview">戶號：</p>
+        <fieldset class="seg"><legend>包裹類型</legend>
+          <label><input type="radio" name="kind" value="大包裹"> 大包裹</label><label><input type="radio" name="kind" value="小包裹" checked> 小包裹</label><label><input type="radio" name="kind" value="冷藏包裹"> 冷藏包裹</label></fieldset>
+        <label>收件人（選填）<input name="recipient" maxlength="20"></label>
+        <label><input type="checkbox" name="registered"> 掛號信</label>
+        <label class="track-tail" hidden>郵件編號末 4 碼<input name="trackTail" maxlength="4" pattern="[A-Za-z0-9]{0,4}" inputmode="text"></label>
         <label>照片（選填）<input name="photo" type="file" accept="image/*" capture="environment"></label>
         <p class="muted small">拍包裹外觀即可，避免把貨運單上的姓名電話拍清楚。</p>
         <label>備註（選填）<input name="note"></label>
         <p class="alert" hidden></p>
         <button class="btn primary block" type="submit">簽收登記</button>
       </form>`;
-    const f = el.querySelector('form'), auto = f.querySelector('#auto');
-    const upd = () => {
-      const cold = f.temp.value === '冷藏';
-      f.querySelector('.dims').hidden = cold;
-      const l = +f.l.value, w = +f.w.value, h = +f.h.value;
-      auto.textContent = cold ? '系統判定：冷藏' : (l && w && h) ? `系統判定：${Math.max(l,w,h) > 100 || l+w+h > 200 ? '大型' : '小型'}` : '';
-      f.querySelector('#reason-l').hidden = !f.finalClass.value;
-    };
+    const f = el.querySelector('form');
+    const upd = () => { const door = f.door.value, floor = f.floor.value, letter = ({2:'A',6:'B',8:'C'})[door]; f.querySelector('#unit-preview').textContent = `戶號：${floor && letter ? floor+letter : ''}`; f.querySelector('.unit-error').hidden = !!(floor && letter); f.querySelector('.track-tail').hidden = !f.registered.checked; };
     f.addEventListener('input', upd); f.addEventListener('change', upd); upd();
+    f.trackTail.addEventListener('input', () => { f.trackTail.value = f.trackTail.value.replace(/[^a-z0-9]/gi, '').slice(0,4); });
     f.onsubmit = async e => {
       e.preventDefault();
-      const v = ui.formData(f), body = {unit:v.unit.toUpperCase(), temp:v.temp, note:v.note};
-      if(v.temp === '常溫') Object.assign(body, {l:+v.l, w:+v.w, h:+v.h});
-      if(v.finalClass){ body.finalClass = v.finalClass; body.reason = v.reason; }
+      const v = ui.formData(f), letter = ({2:'A',6:'B',8:'C'})[v.door];
+      if(!letter || !v.floor){ f.querySelector('.unit-error').hidden = false; return; }
+      const kind = v.kind, body = {unit:v.floor+letter, temp:kind === '冷藏包裹' ? '冷藏' : '常溫', size:kind === '大包裹' ? '大' : kind === '小包裹' ? '小' : '冷藏', note:v.note};
+      const recipient = (v.recipient || '').trim(); if(recipient) body.recipient = recipient;
+      if(v.registered){ body.registered = true; const tail = (v.trackTail || '').trim(); if(tail) body.trackTail = tail; }
       const file = f.photo.files[0];
       if(file){ try{ body.photoBase64 = await shrink(file); body.photoMime = 'image/jpeg'; }catch(err){ ui.toast('照片處理失敗，請重拍', 'error'); return; } }
       const r = await ui.run('pkg.create', body, {form:f, box:f.querySelector('.alert'), button:f.querySelector('button[type=submit]')});
@@ -185,9 +189,10 @@
     const {esc} = ui;
     ui.loading(el);
     const r = await ui.run('pkg.pending'); if(!r.ok){ el.innerHTML = ''; return; }
-    const ps = r.data.packages.slice().sort((a,b) => a.unit.localeCompare(b.unit));
+    const ps = r.data.packages.slice().sort((a,b) => Number(!!b.registered)-Number(!!a.registered) || a.unit.localeCompare(b.unit));
     el.innerHTML = `<p class="muted small">共 ${ps.length} 件待領</p><ul class="list">${ps.map(p => `
-      <li class="item"><div class="row"><b>${esc(p.unit)}・${esc(p.cls)}</b><span class="tag-s ${STAGE_TONE(p.stage)}">${esc(p.stage)}</span></div>
+      <li class="item"><div class="row"><b>${esc(p.unit)}${p.registered ? ' <span class="tag-s bad">掛號</span>' : ''}・${esc(p.cls)}</b><span class="tag-s ${STAGE_TONE(p.stage)}">${esc(p.stage)}</span></div>
+        ${p.recipient ? `<div class="small">收件人：${esc(p.recipient)}</div>` : ''}${p.trackTail ? `<div class="small">編號末4碼 ${esc(p.trackTail)}</div>` : ''}
         <div class="small muted">${esc(p.time)}・${p.days} 天${p.fee ? `・${p.fee} 元` : ''}${p.hasPhoto ? '・有照片' : ''}</div>
         <div class="btnrow"><button class="btn small" data-id="${esc(p.id)}">住戶當面領取</button>
           <button class="btn small ghost" data-paper="${esc(p.id)}">夜間紙本補記</button></div>
@@ -197,7 +202,9 @@
           <p class="alert" hidden></p><button class="btn small primary">補記領取</button></form></li>`).join('')}</ul>`;
     const done = msg => { ui.toast(msg); API.invalidateStats(); ui.pushStats(true); listTab(el, ui); };
     el.querySelectorAll('[data-id]').forEach(b => b.onclick = () => ui.confirmTwice(b, async () => {
-      const res = await ui.run('pkg.collect', {id:b.dataset.id}, {button:b});
+      const p = ps.find(x => String(x.id) === b.dataset.id), extra = p && p.registered ? registeredCollect() : {};
+      if(extra === null) return;
+      const res = await ui.run('pkg.collect', {id:b.dataset.id, ...extra}, {button:b});
       if(res.ok) done('已標記領取' + (res.data.fee ? `，保管費 ${res.data.fee} 元` : ''));
     }));
     el.querySelectorAll('[data-paper]').forEach(b => b.onclick = () => {
@@ -208,7 +215,9 @@
       e.preventDefault();
       const gotAt = f.gotAt.value.replace('T', ' ');
       if(!gotAt){ f.gotAt.setAttribute('aria-invalid','true'); return; }
-      const res = await ui.run('pkg.collect', {id:f.dataset.for, how:'夜間紙本', gotAt}, {form:f, box:f.querySelector('.alert'), button:f.querySelector('button')});
+      const p = ps.find(x => String(x.id) === f.dataset.for), extra = p && p.registered ? registeredCollect() : {};
+      if(extra === null) return;
+      const res = await ui.run('pkg.collect', {id:f.dataset.for, how:'夜間紙本', gotAt, ...extra}, {form:f, box:f.querySelector('.alert'), button:f.querySelector('button')});
       if(res.ok) done('已補記夜間紙本領取' + (res.data.fee ? `，保管費 ${res.data.fee} 元` : ''));
     });
   }
